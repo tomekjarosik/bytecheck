@@ -1,10 +1,11 @@
 package cmd
 
 import (
-	"github.com/spf13/cobra"
-	"github.com/tomekjarosik/bytecheck/pkg/scanner"
 	"time"
 
+	"github.com/spf13/cobra"
+
+	"github.com/tomekjarosik/bytecheck/pkg/scanner"
 	"github.com/tomekjarosik/bytecheck/pkg/ui"
 	"github.com/tomekjarosik/bytecheck/pkg/verify"
 )
@@ -26,7 +27,7 @@ the current state of the files in each directory.`,
 			if len(args) > 0 {
 				targetDir = args[0]
 			}
-			progressCh := make(chan scanner.Stats, 10)
+			progressCh := make(chan *scanner.Stats, 10)
 			scannerOpts := []scanner.Option{scanner.WithProgressChannel(progressCh)}
 			if freshnessInterval > 0 {
 				scannerOpts = append(scannerOpts, scanner.WithManifestFreshnessLimit(freshnessInterval))
@@ -34,8 +35,17 @@ the current state of the files in each directory.`,
 
 			sc := scanner.New(scannerOpts...)
 			verifier := verify.New(sc)
-			go ui.PrintProgress(progressCh, false)
+			done := make(chan bool)
+			go func() {
+				ui.PrintProgress(progressCh, false)
+				done <- true
+			}()
+
 			result, err := verifier.Verify(cmd.Context(), targetDir)
+
+			close(progressCh)
+			<-done
+
 			if err != nil {
 				return err
 			}

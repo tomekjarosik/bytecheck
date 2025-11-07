@@ -15,7 +15,7 @@ type Generator struct {
 }
 
 type Stats struct {
-	scanner.Stats
+	*scanner.Stats
 	ManifestsGenerated []string
 }
 

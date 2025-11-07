@@ -43,24 +43,6 @@ func PrintVerificationResult(w io.Writer, result *VerificationResult) {
 	}
 }
 
-// GetVerificationFailureSummary returns a brief summary of all failures
-func GetVerificationFailureSummary(result *VerificationResult) []string {
-	if result.AllValid {
-		return nil
-	}
-
-	summary := make([]string, len(result.Failures))
-	for i, failure := range result.Failures {
-		diffCount := len(failure.Differences)
-		if diffCount == 1 {
-			summary[i] = fmt.Sprintf("%s (1 difference)", failure.Path)
-		} else {
-			summary[i] = fmt.Sprintf("%s (%d differences)", failure.Path, diffCount)
-		}
-	}
-	return summary
-}
-
 // ConvertVerificationResult converts from verify.Result to ui.VerificationResult
 func ConvertVerificationResult(manifestsFound, manifestsVerified, manifestsSkipped int, allValid bool, failures []VerificationFailure) *VerificationResult {
 	return &VerificationResult{

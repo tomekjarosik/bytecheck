@@ -9,7 +9,7 @@ type options struct {
 	workersCount           int
 	manifestName           string
 	manifestFreshnessLimit *time.Duration
-	progressChannel        chan Stats
+	progressChannel        chan *Stats
 	reportInterval         time.Duration
 }
 
@@ -18,7 +18,7 @@ type Option func(opts *options)
 func makeOptions(opts ...Option) *options {
 	res := &options{
 		workersCount:           max(2, runtime.NumCPU()-2),
-		progressChannel:        make(chan Stats, 10),
+		progressChannel:        make(chan *Stats, 10),
 		reportInterval:         200 * time.Millisecond,
 		manifestName:           ".bytecheck.manifest",
 		manifestFreshnessLimit: nil,
@@ -37,7 +37,7 @@ func WithWorkersCount(workersCount int) Option {
 	}
 }
 
-func WithProgressChannel(progressChannel chan Stats) Option {
+func WithProgressChannel(progressChannel chan *Stats) Option {
 	return func(o *options) {
 		o.progressChannel = progressChannel
 	}

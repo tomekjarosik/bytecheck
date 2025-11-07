@@ -7,7 +7,7 @@ import (
 )
 
 // printProgress monitors the progress channel and prints updates
-func PrintProgress(progressCh <-chan scanner.Stats, quiet bool) {
+func PrintProgress(progressCh <-chan *scanner.Stats, quiet bool) {
 	if quiet {
 		// Just drain the channel without printing
 		for range progressCh {
@@ -18,41 +18,42 @@ func PrintProgress(progressCh <-chan scanner.Stats, quiet bool) {
 	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
 
-	var lastStats scanner.Stats
+	var lastStats *scanner.Stats
 
 	for {
 		select {
 		case stats, ok := <-progressCh:
 			if !ok {
 				// Channel closed, print final stats and return
-				if lastStats.StartTime != (time.Time{}) {
+				if lastStats != nil {
 					clearProgressLine()
-					elapsed := time.Since(lastStats.StartTime)
-					fmt.Printf("%sFinal:%s %d files, %d dirs, %s bytes in %v\n",
+					elapsed := time.Since(lastStats.StartTime())
+					fmt.Printf("%sfinal:%s %d files, %d dirs, %s bytes in %v\n",
 						ColorGreen, ColorReset,
-						lastStats.FilesProcessed,
-						lastStats.DirsProcessed,
-						formatBytes(lastStats.BytesProcessed),
+						lastStats.FilesProcessed(),
+						lastStats.DirsProcessed(),
+						formatBytes(lastStats.BytesProcessed()),
 						elapsed.Round(time.Millisecond),
 					)
 				}
 				return
+			} else {
+				lastStats = stats
 			}
-			lastStats = stats
 
 		case <-ticker.C:
 			// Print periodic updates
-			if lastStats.StartTime != (time.Time{}) {
-				elapsed := time.Since(lastStats.StartTime)
-				rate := float64(lastStats.BytesProcessed) / elapsed.Seconds()
+			if lastStats != nil {
+				elapsed := time.Since(lastStats.StartTime())
+				rate := float64(lastStats.BytesProcessed()) / elapsed.Seconds()
 
-				fmt.Printf("\r%sProgress:%s %8d files, %4d dirs, %s (%.1f MB/s) - %s",
+				fmt.Printf("\r%sprogress:%s %8d files, %4d dirs, %s (%.1f MB/s) - %s",
 					ColorCyan, ColorReset,
-					lastStats.FilesProcessed,
-					lastStats.DirsProcessed,
-					formatBytes(lastStats.BytesProcessed),
+					lastStats.FilesProcessed(),
+					lastStats.DirsProcessed(),
+					formatBytes(lastStats.BytesProcessed()),
 					rate/(1024*1024),
-					truncatePath(lastStats.CurrentFile, 50),
+					truncatePath(lastStats.CurrentFile(), 50),
 				)
 			}
 		}

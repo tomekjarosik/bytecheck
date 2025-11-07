@@ -67,7 +67,7 @@ func TestScannerWalk(t *testing.T) {
 	var processedManifests []*manifest.Manifest
 
 	// Create scanner with progress channel
-	progressCh := make(chan Stats, 10)
+	progressCh := make(chan *Stats, 10)
 	scanner := New(WithProgressChannel(progressCh))
 
 	ctx := context.Background()
@@ -228,11 +228,11 @@ func TestScannerProgressChannel(t *testing.T) {
 	}
 
 	// Create scanner with progress channel
-	progressCh := make(chan Stats, 10)
+	progressCh := make(chan *Stats, 10)
 	scanner := New(WithProgressChannel(progressCh))
 
 	// Start a goroutine to collect progress updates
-	progressUpdates := make([]Stats, 0)
+	progressUpdates := make([]*Stats, 0)
 	done := make(chan bool)
 	go func() {
 		for stats := range progressCh {
@@ -263,7 +263,7 @@ func TestScannerProgressChannel(t *testing.T) {
 	if len(progressUpdates) > 0 {
 		lastUpdate := progressUpdates[len(progressUpdates)-1]
 		t.Logf("Final progress: DirsProcessed=%d, FilesProcessed=%d, BytesProcessed=%d",
-			lastUpdate.DirsProcessed, lastUpdate.FilesProcessed, lastUpdate.BytesProcessed)
+			lastUpdate.DirsProcessed(), lastUpdate.FilesProcessed(), lastUpdate.BytesProcessed())
 	}
 
 	t.Log("✓ Progress channel test passed")
@@ -284,7 +284,7 @@ func TestScannerOptions(t *testing.T) {
 	// This mainly tests that the option doesn't cause any issues
 
 	// Test with progress channel
-	progressCh := make(chan Stats, 10)
+	progressCh := make(chan *Stats, 10)
 	scanner3 := New(WithProgressChannel(progressCh))
 	if scanner3.GetProgressChannel() != progressCh {
 		t.Error("Progress channel not set correctly")

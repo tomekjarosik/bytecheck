@@ -2,7 +2,6 @@ package scanner
 
 import (
 	"context"
-	"fmt"
 	"github.com/tomekjarosik/bytecheck/pkg/manifest"
 	"github.com/tomekjarosik/bytecheck/pkg/traverse"
 	"golang.org/x/sync/errgroup"
@@ -33,7 +32,15 @@ func New(opts ...Option) *Scanner {
 // It processes directories in POST-ORDER (children before parents) which is perfect
 // for calculating directory checksums based on manifest files that depend on child manifests.
 func (s *Scanner) Walk(ctx context.Context, root string, walkFn ScannedDirFunc) error {
-	s.stats.Start()
+	s.stats.Start(ctx, func(stats *Stats) {
+		select {
+		case <-ctx.Done():
+			return
+		case s.options.progressChannel <- stats:
+		default: // channel is full, skip
+		}
+	}, 100*time.Millisecond)
+	defer s.stats.Stop()
 	return traverse.WalkPostOrder(ctx, root, func(ctx context.Context, dirPath string, err error) error {
 		if err != nil {
 			return walkFn(ctx, dirPath, nil, false, err)
@@ -51,7 +58,7 @@ func (s *Scanner) GetManifestFreshnessLimit() *time.Duration {
 	return s.options.manifestFreshnessLimit
 }
 
-func (s *Scanner) GetProgressChannel() <-chan Stats {
+func (s *Scanner) GetProgressChannel() <-chan *Stats {
 	return s.options.progressChannel
 }
 
@@ -111,8 +118,7 @@ func (s *Scanner) scanDirectory(ctx context.Context, dir string) (m *manifest.Ma
 					fullPath = filepath.Join(fullPath, s.options.manifestName)
 				}
 
-				s.reportProgress(fmt.Sprintf("Scanning %s", fullPath))
-				checksum, err := calculateChecksum(fullPath, &s.stats)
+				checksum, err := calculateChecksum(ctx, fullPath, &s.stats)
 				if err != nil {
 					return err
 				}
@@ -168,24 +174,6 @@ func (s *Scanner) scanDirectory(ctx context.Context, dir string) (m *manifest.Ma
 	return manifest.New(computedEntities), false, nil
 }
 
-func (s *Scanner) GetStats() Stats {
-	return s.stats
-}
-
-// reportProgress reports progress if enough time has elapsed
-func (s *Scanner) reportProgress(currentFile string) {
-	s.progressMutex.Lock()
-	defer s.progressMutex.Unlock()
-
-	now := time.Now()
-	if now.Sub(s.lastReportTime) < s.options.reportInterval {
-		return
-	}
-	s.stats.CurrentFile = currentFile
-	select {
-	case s.options.progressChannel <- s.stats:
-	default:
-		// Channel is full, skip this update to prevent blocking
-	}
-	s.lastReportTime = now
+func (s *Scanner) GetStats() *Stats {
+	return &s.stats
 }
