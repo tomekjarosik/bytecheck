@@ -40,7 +40,6 @@ func (s *Scanner) Walk(ctx context.Context, root string, walkFn ScannedDirFunc) 
 		default: // channel is full, skip
 		}
 	}, 100*time.Millisecond)
-	defer s.stats.Stop()
 	return traverse.WalkPostOrder(ctx, root, func(ctx context.Context, dirPath string, err error) error {
 		if err != nil {
 			return walkFn(ctx, dirPath, nil, false, err)

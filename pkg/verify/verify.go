@@ -21,6 +21,7 @@ type Result struct {
 	ManifestSkipped   int
 	AllValid          bool
 	Failures          []DirectoryFailure
+	Stats             *scanner.Stats
 }
 
 // Verifier handles verification operations
@@ -97,6 +98,7 @@ func (v *Verifier) Verify(ctx context.Context, rootPath string) (*Result, error)
 	if err != nil {
 		return nil, err
 	}
+	result.Stats = v.scanner.GetStats()
 
 	return result, nil
 }

@@ -35,17 +35,11 @@ the current state of the files in each directory.`,
 
 			sc := scanner.New(scannerOpts...)
 			verifier := verify.New(sc)
-			done := make(chan bool)
-			go func() {
-				ui.PrintProgress(progressCh, false)
-				done <- true
-			}()
-
+			pm := ui.NewProgressMonitor(3 * time.Second)
+			pm.MonitorInBackground(cmd.Context(), cmd.OutOrStdout(), progressCh)
 			result, err := verifier.Verify(cmd.Context(), targetDir)
-
 			close(progressCh)
-			<-done
-
+			pm.Wait()
 			if err != nil {
 				return err
 			}
@@ -66,7 +60,7 @@ the current state of the files in each directory.`,
 				result.AllValid,
 				uiFailures,
 			)
-
+			pm.PrintFinalLine(cmd.OutOrStdout(), result.Stats) // final progress line
 			ui.PrintVerificationResult(cmd.OutOrStdout(), uiResult)
 			return nil
 		},

@@ -33,15 +33,18 @@ recalculating directories where the manifest is newer than the freshness interva
 			}
 			sc := scanner.New(scannerOpts...)
 			gen := generator.New(sc)
-
-			go ui.PrintProgress(progressCh, false)
+			pm := ui.NewProgressMonitor(3 * time.Second)
+			pm.MonitorInBackground(cmd.Context(), cmd.OutOrStdout(), progressCh)
 
 			err := gen.Generate(cmd.Context(), targetDir)
-
+			close(progressCh)
+			pm.Wait()
 			if err != nil {
 				return err
 			}
+
 			stats := gen.GetStats()
+			pm.PrintFinalLine(cmd.OutOrStdout(), stats.Stats)
 			ui.PrintWriteResult(cmd.OutOrStdout(), stats.DirsProcessed(), stats.CachedProcessed(), stats.ManifestsGenerated)
 			return nil
 		},

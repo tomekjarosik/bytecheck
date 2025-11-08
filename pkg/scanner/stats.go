@@ -98,10 +98,6 @@ func (s *Stats) Start(ctx context.Context, onUpdate func(*Stats), updateInterval
 	}()
 }
 
-func (s *Stats) Stop() {
-	s.sendUpdate()
-}
-
 func (s *Stats) IncreaseDirProcessed() {
 	atomic.AddInt64(&s.dirsProcessed, 1)
 	s.requestUpdate()

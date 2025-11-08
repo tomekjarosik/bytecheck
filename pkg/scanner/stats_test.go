@@ -352,22 +352,3 @@ func TestStats_ContextCancellation(t *testing.T) {
 		t.Errorf("Expected no new callbacks after context cancellation, before: %d, after: %d", beforeCount, afterCount)
 	}
 }
-
-func TestStats_Stop(t *testing.T) {
-	stats := &Stats{}
-	var callbackCount int32
-
-	callback := func(s *Stats) {
-		atomic.AddInt32(&callbackCount, 1)
-	}
-
-	stats.onUpdate = callback
-
-	beforeCount := atomic.LoadInt32(&callbackCount)
-	stats.Stop()
-	afterCount := atomic.LoadInt32(&callbackCount)
-
-	if afterCount != beforeCount+1 {
-		t.Errorf("Expected Stop to trigger one callback, before: %d, after: %d", beforeCount, afterCount)
-	}
-}
