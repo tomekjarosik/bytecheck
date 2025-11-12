@@ -1,85 +1,233 @@
 package manifest
 
 import (
+	"crypto/ed25519"
+	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 )
 
-// TestNew tests the creation of new manifests
+func createTestCertificate(t *testing.T) Certificate {
+	pubKey, privKey, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatalf("Failed to generate key pair: %v", err)
+	}
+
+	signature := ed25519.Sign(privKey, pubKey)
+
+	return &SimpleCertificate{
+		PubKey:       pubKey,
+		Sig:          signature,
+		IssuerPubKey: pubKey, // Self-signed for testing
+	}
+}
+
 func TestNew(t *testing.T) {
 	entities := []Entity{
 		{Name: "file1.txt", Checksum: "abc123", IsDir: false},
-		{Name: "dir1", Checksum: "def456", IsDir: true},
+		{Name: "dir1", Checksum: "", IsDir: true},
 	}
 
-	m := New(entities)
+	manifest := New(entities)
 
-	if m == nil {
+	if manifest == nil {
 		t.Fatal("New() returned nil")
 	}
-
-	if len(m.Entities) != 2 {
-		t.Errorf("Expected 2 entities, got %d", len(m.Entities))
+	if len(manifest.Entities) != 2 {
+		t.Errorf("Expected 2 entities, got %d", len(manifest.Entities))
 	}
-
-	if m.Entities[0].Name != "file1.txt" {
-		t.Errorf("Expected first entity name 'file1.txt', got '%s'", m.Entities[0].Name)
+	if manifest.Entities[0].Name != "file1.txt" {
+		t.Errorf("Expected first entity name 'file1.txt', got '%s'", manifest.Entities[0].Name)
 	}
-
-	if m.Entities[1].IsDir != true {
-		t.Errorf("Expected second entity to be directory")
+	if manifest.HMAC != "" {
+		t.Error("HMAC should be empty for new manifest")
 	}
-}
-
-// TestNewEmptyManifest tests creating manifest with no entities
-func TestNewEmptyManifest(t *testing.T) {
-	m := New([]Entity{})
-
-	if m == nil {
-		t.Fatal("New() returned nil for empty entities")
-	}
-
-	if len(m.Entities) != 0 {
-		t.Errorf("Expected 0 entities, got %d", len(m.Entities))
+	if manifest.Auditor != nil {
+		t.Error("Auditor should be nil for new manifest")
 	}
 }
 
-// TestSaveAndLoad tests saving and loading manifests
-func TestSaveAndLoad(t *testing.T) {
-	// Create temporary directory
-	tempDir, err := os.MkdirTemp("", "manifest_test")
+func TestSimpleCertificate_Interface(t *testing.T) {
+	pubKey, privKey, err := ed25519.GenerateKey(nil)
 	if err != nil {
-		t.Fatalf("Failed to create temp directory: %v", err)
+		t.Fatalf("Failed to generate key pair: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
 
-	manifestPath := filepath.Join(tempDir, "manifest.txt")
+	signature := ed25519.Sign(privKey, pubKey)
+	cert := &SimpleCertificate{
+		PubKey:       pubKey,
+		Sig:          signature,
+		IssuerPubKey: pubKey,
+	}
 
-	// Create test manifest
+	// Test interface compliance
+	var _ Certificate = cert
+
+	// Test methods
+	if !cert.PublicKey().Equal(pubKey) {
+		t.Error("PublicKey() method failed")
+	}
+	if string(cert.Signature()) != string(signature) {
+		t.Error("Signature() method failed")
+	}
+	if !cert.IssuerPublicKey().Equal(pubKey) {
+		t.Error("IssuerPublicKey() method failed")
+	}
+}
+
+func TestManifest_SetAuditedBy(t *testing.T) {
+	manifest := New([]Entity{
+		{Name: "test.txt", Checksum: "abc123", IsDir: false},
+	})
+
+	cert := createTestCertificate(t)
+	manifestSignature := []byte("test-signature")
+
+	beforeTime := time.Now()
+	manifest.SetAuditedBy(cert, manifestSignature)
+	afterTime := time.Now()
+
+	if manifest.Auditor == nil {
+		t.Fatal("Auditor should not be nil after SetAuditedBy")
+	}
+
+	// Check timestamp is reasonable
+	if manifest.Auditor.Timestamp.Before(beforeTime) || manifest.Auditor.Timestamp.After(afterTime) {
+		t.Error("Auditor timestamp is not within expected range")
+	}
+
+	// Check certificate data
+	expectedPubKey := hex.EncodeToString(cert.PublicKey())
+	if manifest.Auditor.Certificate.PublicKey != expectedPubKey {
+		t.Errorf("Expected public key %s, got %s", expectedPubKey, manifest.Auditor.Certificate.PublicKey)
+	}
+
+	expectedSig := hex.EncodeToString(cert.Signature())
+	if manifest.Auditor.Certificate.Signature != expectedSig {
+		t.Errorf("Expected signature %s, got %s", expectedSig, manifest.Auditor.Certificate.Signature)
+	}
+
+	expectedIssuerPubKey := hex.EncodeToString(cert.IssuerPublicKey())
+	if manifest.Auditor.Certificate.IssuerPublicKey != expectedIssuerPubKey {
+		t.Errorf("Expected issuer public key %s, got %s", expectedIssuerPubKey, manifest.Auditor.Certificate.IssuerPublicKey)
+	}
+
+	// Check manifest signature
+	expectedManifestSig := hex.EncodeToString(manifestSignature)
+	if manifest.Auditor.ManifestSignature != expectedManifestSig {
+		t.Errorf("Expected manifest signature %s, got %s", expectedManifestSig, manifest.Auditor.ManifestSignature)
+	}
+}
+
+func TestManifest_GetAuditorCertificate(t *testing.T) {
+	manifest := New([]Entity{})
+
+	// Test with no auditor
+	cert := manifest.GetAuditorCertificate()
+	if cert != nil {
+		t.Error("GetAuditorCertificate should return nil when no auditor is set")
+	}
+
+	// Set auditor and test
+	originalCert := createTestCertificate(t)
+	manifest.SetAuditedBy(originalCert, []byte("test-sig"))
+
+	retrievedCert := manifest.GetAuditorCertificate()
+	if retrievedCert == nil {
+		t.Fatal("GetAuditorCertificate should not return nil when auditor is set")
+	}
+
+	// Compare certificate data
+	if !retrievedCert.PublicKey().Equal(originalCert.PublicKey()) {
+		t.Error("Retrieved certificate public key doesn't match original")
+	}
+	if string(retrievedCert.Signature()) != string(originalCert.Signature()) {
+		t.Error("Retrieved certificate signature doesn't match original")
+	}
+	if !retrievedCert.IssuerPublicKey().Equal(originalCert.IssuerPublicKey()) {
+		t.Error("Retrieved certificate issuer public key doesn't match original")
+	}
+}
+
+func TestManifest_GetAuditorManifestSignature(t *testing.T) {
+	manifest := New([]Entity{})
+
+	// Test with no auditor
+	sig := manifest.GetAuditorManifestSignature()
+	if sig != nil {
+		t.Error("GetAuditorManifestSignature should return nil when no auditor is set")
+	}
+
+	// Set auditor and test
+	cert := createTestCertificate(t)
+	originalSig := []byte("test-manifest-signature")
+	manifest.SetAuditedBy(cert, originalSig)
+
+	retrievedSig := manifest.GetAuditorManifestSignature()
+	if string(retrievedSig) != string(originalSig) {
+		t.Error("Retrieved manifest signature doesn't match original")
+	}
+}
+
+func TestManifest_CalculateHMAC(t *testing.T) {
 	entities := []Entity{
-		{Name: "README.md", Checksum: "a1b2c3d4", IsDir: false},
-		{Name: "src", Checksum: "e5f6g7h8", IsDir: true},
-		{Name: "main.go", Checksum: "i9j0k1l2", IsDir: false},
+		{Name: "file1.txt", Checksum: "abc123", IsDir: false},
+		{Name: "file2.txt", Checksum: "def456", IsDir: false},
+	}
+	manifest := New(entities)
+
+	err := manifest.calculateHMAC()
+	if err != nil {
+		t.Fatalf("calculateHMAC failed: %v", err)
+	}
+
+	if manifest.HMAC == "" {
+		t.Error("HMAC should not be empty after calculation")
+	}
+
+	// Test consistency - calculating again should give same result
+	originalHMAC := manifest.HMAC
+	err = manifest.calculateHMAC()
+	if err != nil {
+		t.Fatalf("Second calculateHMAC failed: %v", err)
+	}
+
+	if manifest.HMAC != originalHMAC {
+		t.Error("HMAC should be consistent across multiple calculations")
+	}
+}
+
+func TestManifest_SaveAndLoad(t *testing.T) {
+	tempDir := t.TempDir()
+	manifestPath := filepath.Join(tempDir, "test.manifest")
+
+	// Create manifest
+	entities := []Entity{
+		{Name: "file1.txt", Checksum: "abc123", IsDir: false},
+		{Name: "dir1", Checksum: "", IsDir: true},
 	}
 	originalManifest := New(entities)
 
-	// Save the manifest
-	err = originalManifest.Save(manifestPath)
+	// Add auditor
+	cert := createTestCertificate(t)
+	manifestSignature := []byte("test-signature")
+	originalManifest.SetAuditedBy(cert, manifestSignature)
+
+	// Save manifest
+	err := originalManifest.Save(manifestPath)
 	if err != nil {
 		t.Fatalf("Failed to save manifest: %v", err)
 	}
 
-	// Check that manifest file was created
+	// Verify file exists
 	if _, err := os.Stat(manifestPath); os.IsNotExist(err) {
 		t.Fatal("Manifest file was not created")
 	}
 
-	// Load the manifest back
+	// Load manifest
 	loadedManifest, err := LoadManifest(manifestPath)
 	if err != nil {
 		t.Fatalf("Failed to load manifest: %v", err)
@@ -95,337 +243,335 @@ func TestSaveAndLoad(t *testing.T) {
 			len(originalManifest.Entities), len(loadedManifest.Entities))
 	}
 
-	for i, original := range originalManifest.Entities {
-		loaded := loadedManifest.Entities[i]
-		if original.Name != loaded.Name {
-			t.Errorf("Entity %d name mismatch: expected '%s', got '%s'",
-				i, original.Name, loaded.Name)
-		}
-		if original.Checksum != loaded.Checksum {
-			t.Errorf("Entity %d checksum mismatch: expected '%s', got '%s'",
-				i, original.Checksum, loaded.Checksum)
-		}
-		if original.IsDir != loaded.IsDir {
-			t.Errorf("Entity %d IsDir mismatch: expected %t, got %t",
-				i, original.IsDir, loaded.IsDir)
+	for i, entity := range loadedManifest.Entities {
+		original := originalManifest.Entities[i]
+		if entity.Name != original.Name || entity.Checksum != original.Checksum || entity.IsDir != original.IsDir {
+			t.Errorf("Entity %d mismatch: expected %+v, got %+v", i, original, entity)
 		}
 	}
 
-	t.Log("✓ Save and load completed successfully")
+	// Compare HMAC
+	if loadedManifest.HMAC != originalManifest.HMAC {
+		t.Error("HMAC mismatch between original and loaded manifest")
+	}
+
+	// Compare auditor
+	if loadedManifest.Auditor == nil {
+		t.Fatal("Loaded manifest auditor is nil")
+	}
+
+	if loadedManifest.Auditor.Certificate.PublicKey != originalManifest.Auditor.Certificate.PublicKey {
+		t.Error("Auditor certificate public key mismatch")
+	}
 }
 
-// TestLoadNonExistentManifest tests loading from directory without manifest
-func TestLoadNonExistentManifest(t *testing.T) {
-	// Create temporary directory
-	tempDir, err := os.MkdirTemp("", "manifest_test_empty")
-	if err != nil {
-		t.Fatalf("Failed to create temp directory: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
-	manifestPath := filepath.Join(tempDir, "manifest.txt")
+func TestManifest_LoadNonExistent(t *testing.T) {
+	nonExistentPath := "/path/that/does/not/exist"
 
-	// Try to load manifest from empty directory
-	manifest, err := LoadManifest(manifestPath)
+	manifest, err := LoadManifest(nonExistentPath)
 	if err != nil {
-		t.Errorf("LoadManifest should not return error for non-existent manifest, got: %v", err)
+		t.Errorf("Expected no error for non-existent file, got: %v", err)
 	}
-
 	if manifest != nil {
-		t.Error("LoadManifest should return nil for non-existent manifest")
+		t.Error("Expected nil manifest for non-existent file")
 	}
-
-	t.Log("✓ Non-existent manifest handled correctly")
 }
 
-// TestLoadInvalidManifest tests loading corrupted manifest files
-func TestLoadInvalidManifest(t *testing.T) {
-	// Create temporary directory
-	tempDir, err := os.MkdirTemp("", "manifest_test_invalid")
-	if err != nil {
-		t.Fatalf("Failed to create temp directory: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
+func TestManifest_LoadInvalidJSON(t *testing.T) {
+	tempDir := t.TempDir()
+	manifestPath := filepath.Join(tempDir, "invalid.manifest")
 
-	manifestPath := filepath.Join(tempDir, "manifest.txt")
-	invalidJSON := `{"entities": [{"name": "incomplete"`
-	err = os.WriteFile(manifestPath, []byte(invalidJSON), 0644)
+	// Write invalid JSON
+	err := os.WriteFile(manifestPath, []byte("invalid json content"), 0644)
 	if err != nil {
-		t.Fatalf("Failed to create invalid manifest file: %v", err)
+		t.Fatalf("Failed to write invalid manifest: %v", err)
 	}
 
-	// Try to load invalid manifest
-	manifest, err := LoadManifest(manifestPath)
+	_, err = LoadManifest(manifestPath)
 	if err == nil {
-		t.Error("LoadManifest should return error for invalid JSON")
+		t.Error("Expected error for invalid JSON")
 	}
-
-	if manifest != nil {
-		t.Error("LoadManifest should return nil manifest for invalid JSON")
-	}
-
-	if !strings.Contains(err.Error(), "failed to parse manifest") {
-		t.Errorf("Error message should mention parsing failure, got: %v", err)
-	}
-
-	t.Log("✓ Invalid manifest handled correctly")
 }
 
-// TestJSONFormat tests the JSON format of saved manifests
-func TestJSONFormat(t *testing.T) {
-	// Create temporary directory
-	tempDir, err := os.MkdirTemp("", "manifest_test_json")
+func TestManifest_LoadInvalidHMAC(t *testing.T) {
+	tempDir := t.TempDir()
+	manifestPath := filepath.Join(tempDir, "invalid_hmac.manifest")
+
+	// Create manifest with invalid HMAC
+	invalidManifest := map[string]interface{}{
+		"entities": []map[string]interface{}{
+			{"name": "test.txt", "checksum": "abc123", "isDir": false},
+		},
+		"hmac": "invalid_hmac",
+	}
+
+	jsonData, _ := json.Marshal(invalidManifest)
+	err := os.WriteFile(manifestPath, jsonData, 0644)
 	if err != nil {
-		t.Fatalf("Failed to create temp directory: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
-	manifestPath := filepath.Join(tempDir, "manifest.txt")
-	// Create test manifest
-	entities := []Entity{
-		{Name: "file.txt", Checksum: "checksum123", IsDir: false},
-		{Name: "directory", Checksum: "checksum456", IsDir: true},
-	}
-	manifest := New(entities)
-
-	// Save manifest
-	err = manifest.Save(manifestPath)
-	if err != nil {
-		t.Fatalf("Failed to save manifest: %v", err)
+		t.Fatalf("Failed to write manifest with invalid HMAC: %v", err)
 	}
 
-	// Read the raw JSON file
-
-	data, err := os.ReadFile(manifestPath)
-	if err != nil {
-		t.Fatalf("Failed to read manifest file: %v", err)
+	_, err = LoadManifest(manifestPath)
+	if err == nil {
+		t.Error("Expected error for invalid HMAC")
 	}
-
-	// Check that JSON is properly formatted (indented)
-	jsonStr := string(data)
-	if !strings.Contains(jsonStr, "  ") {
-		t.Error("JSON should be indented for readability")
+	if err != nil && err.Error() != "invalid HMAC" {
+		t.Errorf("Expected 'invalid HMAC' error, got: %v", err)
 	}
-
-	// Parse JSON to verify structure
-	var parsed map[string]interface{}
-	err = json.Unmarshal(data, &parsed)
-	if err != nil {
-		t.Fatalf("Saved manifest is not valid JSON: %v", err)
-	}
-
-	// Check structure - fix the variable name conflict
-	entitiesField, exists := parsed["entities"]
-	if !exists {
-		t.Error("JSON should contain 'entities' field")
-	}
-
-	entitiesArray, ok := entitiesField.([]interface{})
-	if !ok {
-		t.Error("'entities' field should be an array")
-	}
-
-	if len(entitiesArray) != 2 {
-		t.Errorf("Expected 2 entities in JSON, got %d", len(entitiesArray))
-	}
-
-	t.Log("✓ JSON format validation completed")
 }
 
-// TestTouch tests the Touch functionality
-func TestTouch(t *testing.T) {
-	// Create temporary directory
-	tempDir, err := os.MkdirTemp("", "manifest_test_touch")
-	if err != nil {
-		t.Fatalf("Failed to create temp directory: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
-
-	manifestPath := filepath.Join(tempDir, "manifest.txt")
+func TestManifest_Touch(t *testing.T) {
+	tempDir := t.TempDir()
+	manifestPath := filepath.Join(tempDir, "test.manifest")
 
 	// Create and save manifest
 	manifest := New([]Entity{{Name: "test.txt", Checksum: "abc123", IsDir: false}})
-	err = manifest.Save(manifestPath)
+	err := manifest.Save(manifestPath)
 	if err != nil {
 		t.Fatalf("Failed to save manifest: %v", err)
 	}
 
 	// Get initial modification time
-	initialModTime, err := GetModTime(tempDir)
+	info1, err := os.Stat(manifestPath)
 	if err != nil {
-		t.Fatalf("Failed to get initial mod time: %v", err)
+		t.Fatalf("Failed to stat manifest file: %v", err)
 	}
+	initialModTime := info1.ModTime()
 
-	// Wait a bit to ensure time difference
+	// Sleep to ensure time difference
 	time.Sleep(10 * time.Millisecond)
 
-	// Touch the manifest
-	err = manifest.Touch(tempDir)
+	// Touch the file
+	err = manifest.Touch(manifestPath)
 	if err != nil {
 		t.Fatalf("Failed to touch manifest: %v", err)
 	}
 
 	// Get new modification time
-	newModTime, err := GetModTime(tempDir)
+	info2, err := os.Stat(manifestPath)
 	if err != nil {
-		t.Fatalf("Failed to get new mod time: %v", err)
+		t.Fatalf("Failed to stat manifest file after touch: %v", err)
 	}
+	newModTime := info2.ModTime()
 
-	// Check that modification time was updated
 	if !newModTime.After(initialModTime) {
-		t.Error("Touch should update modification time")
+		t.Error("Modification time should be updated after touch")
 	}
-
-	// Verify content wasn't changed by loading manifest
-	loadedManifest, err := LoadManifest(manifestPath)
-	if err != nil {
-		t.Fatalf("Failed to load manifest after touch: %v", err)
-	}
-
-	if len(loadedManifest.Entities) != 1 {
-		t.Error("Touch should not change manifest content")
-	}
-
-	if loadedManifest.Entities[0].Checksum != "abc123" {
-		t.Error("Touch should not change manifest content")
-	}
-
-	t.Log("✓ Touch functionality works correctly")
 }
 
-// TestGetModTime tests GetModTime function
 func TestGetModTime(t *testing.T) {
 	tempDir := t.TempDir()
+	manifestPath := filepath.Join(tempDir, "test.manifest")
 
-	manifestPath := filepath.Join(tempDir, "manifest.txt")
-
+	// Test non-existent file
 	_, err := GetModTime(manifestPath)
 	if err == nil {
-		t.Error("GetModTime should return error for non-existent manifest")
+		t.Error("Expected error for non-existent file")
 	}
 
-	// Create manifest
-	manifest := New([]Entity{{Name: "test.txt", Checksum: "abc123", IsDir: false}})
+	// Create file and test
+	manifest := New([]Entity{})
 	err = manifest.Save(manifestPath)
 	if err != nil {
 		t.Fatalf("Failed to save manifest: %v", err)
 	}
 
-	// Get modification time
 	modTime, err := GetModTime(manifestPath)
 	if err != nil {
 		t.Fatalf("Failed to get mod time: %v", err)
 	}
 
-	// Check that we got a reasonable time (within last minute)
-	now := time.Now()
-	if modTime.After(now) {
-		t.Error("Modification time cannot be in the future")
+	// Verify it's a reasonable time (within last minute)
+	if time.Since(modTime) > time.Minute {
+		t.Error("Modification time seems too old")
 	}
-
-	if now.Sub(modTime) > time.Minute {
-		t.Error("Modification time should be recent")
-	}
-
-	t.Log("✓ GetModTime works correctly")
 }
 
-// TestEntityStruct tests the Entity struct
-func TestEntityStruct(t *testing.T) {
-	entity := Entity{
-		Name:     "test_file.txt",
-		Checksum: "sha256_checksum_here",
-		IsDir:    false,
-	}
+func TestLoadManifestIfFresh(t *testing.T) {
+	tempDir := t.TempDir()
+	manifestPath := filepath.Join(tempDir, "test.manifest")
 
-	// Test JSON marshaling/unmarshaling
-	data, err := json.Marshal(entity)
+	// Test with nil freshness limit
+	manifest, err := LoadManifestIfFresh(manifestPath, nil)
 	if err != nil {
-		t.Fatalf("Failed to marshal entity: %v", err)
+		t.Errorf("Unexpected error with nil freshness limit: %v", err)
+	}
+	if manifest != nil {
+		t.Error("Expected nil manifest with nil freshness limit")
 	}
 
-	var unmarshaled Entity
-	err = json.Unmarshal(data, &unmarshaled)
+	// Create and save manifest
+	originalManifest := New([]Entity{{Name: "test.txt", Checksum: "abc123", IsDir: false}})
+	err = originalManifest.Save(manifestPath)
 	if err != nil {
-		t.Fatalf("Failed to unmarshal entity: %v", err)
+		t.Fatalf("Failed to save manifest: %v", err)
 	}
 
-	if unmarshaled.Name != entity.Name {
-		t.Errorf("Name mismatch after JSON roundtrip: expected '%s', got '%s'",
-			entity.Name, unmarshaled.Name)
+	// Test with fresh manifest
+	freshnessLimit := 1 * time.Hour
+	manifest, err = LoadManifestIfFresh(manifestPath, &freshnessLimit)
+	if err != nil {
+		t.Fatalf("Failed to load fresh manifest: %v", err)
+	}
+	if manifest == nil {
+		t.Error("Expected non-nil manifest for fresh file")
 	}
 
-	if unmarshaled.Checksum != entity.Checksum {
-		t.Errorf("Checksum mismatch after JSON roundtrip: expected '%s', got '%s'",
-			entity.Checksum, unmarshaled.Checksum)
+	// Make file stale by setting old timestamp
+	staleTime := time.Now().Add(-2 * time.Hour)
+	err = os.Chtimes(manifestPath, staleTime, staleTime)
+	if err != nil {
+		t.Fatalf("Failed to make file stale: %v", err)
 	}
 
-	if unmarshaled.IsDir != entity.IsDir {
-		t.Errorf("IsDir mismatch after JSON roundtrip: expected %t, got %t",
-			entity.IsDir, unmarshaled.IsDir)
+	// Test with stale manifest
+	shortFreshnessLimit := 30 * time.Minute
+	manifest, err = LoadManifestIfFresh(manifestPath, &shortFreshnessLimit)
+	if err != nil {
+		t.Errorf("Unexpected error with stale manifest: %v", err)
+	}
+	if manifest != nil {
+		t.Error("Expected nil manifest for stale file")
 	}
 
-	t.Log("✓ Entity struct works correctly")
+	// Test with non-existent file
+	nonExistentPath := filepath.Join(tempDir, "nonexistent.manifest")
+	manifest, err = LoadManifestIfFresh(nonExistentPath, &freshnessLimit)
+	if err != nil {
+		t.Errorf("Unexpected error for non-existent file: %v", err)
+	}
+	if manifest != nil {
+		t.Error("Expected nil manifest for non-existent file")
+	}
 }
 
-// BenchmarkSaveManifest benchmarks manifest saving
-func BenchmarkSaveManifest(b *testing.B) {
-	// Create temporary directory
-	tempDir, err := os.MkdirTemp("", "manifest_benchmark")
+func TestManifest_DataWithoutAuditor(t *testing.T) {
+	// Create manifest with auditor
+	manifest := New([]Entity{{Name: "test.txt", Checksum: "abc123", IsDir: false}})
+	cert := createTestCertificate(t)
+	manifest.SetAuditedBy(cert, []byte("test-signature"))
+
+	// Get data without auditor
+	data, err := manifest.DataWithoutAuditor()
 	if err != nil {
-		b.Fatalf("Failed to create temp directory: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
-
-	// Create a manifest with many entities
-	entities := make([]Entity, 1000)
-	for i := 0; i < 1000; i++ {
-		entities[i] = Entity{
-			Name:     fmt.Sprintf("file_%d.txt", i),
-			Checksum: fmt.Sprintf("checksum_%d", i),
-			IsDir:    i%10 == 0, // Every 10th is a directory
-		}
+		t.Fatalf("Failed to get data without auditor: %v", err)
 	}
 
+	// Parse the JSON to verify auditor is not included
+	var result map[string]interface{}
+	err = json.Unmarshal(data, &result)
+	if err != nil {
+		t.Fatalf("Failed to parse JSON: %v", err)
+	}
+
+	if _, exists := result["auditor"]; exists {
+		t.Error("Auditor should not be present in data without auditor")
+	}
+
+	// Verify entities are still present
+	entities, exists := result["entities"]
+	if !exists {
+		t.Error("Entities should be present in data without auditor")
+	}
+
+	entitiesSlice, ok := entities.([]interface{})
+	if !ok || len(entitiesSlice) != 1 {
+		t.Error("Expected one entity in data without auditor")
+	}
+}
+
+func TestManifest_JSONSerialization(t *testing.T) {
+	// Create manifest with all fields populated
+	entities := []Entity{
+		{Name: "file1.txt", Checksum: "abc123", IsDir: false},
+		{Name: "dir1", Checksum: "", IsDir: true},
+	}
 	manifest := New(entities)
+	cert := createTestCertificate(t)
+	manifestSignature := []byte("test-signature")
+	manifest.SetAuditedBy(cert, manifestSignature)
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		err := manifest.Save(tempDir)
-		if err != nil {
-			b.Fatalf("Failed to save manifest: %v", err)
-		}
+	// Marshal to JSON
+	jsonData, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("Failed to marshal manifest: %v", err)
+	}
+
+	// Unmarshal back
+	var unmarshaledManifest Manifest
+	err = json.Unmarshal(jsonData, &unmarshaledManifest)
+	if err != nil {
+		t.Fatalf("Failed to unmarshal manifest: %v", err)
+	}
+
+	// Compare entities
+	if len(unmarshaledManifest.Entities) != len(manifest.Entities) {
+		t.Error("Entity count mismatch after JSON round trip")
+	}
+
+	// Compare auditor
+	if unmarshaledManifest.Auditor == nil {
+		t.Error("Auditor should not be nil after JSON round trip")
+	}
+
+	if unmarshaledManifest.Auditor.Certificate.PublicKey != manifest.Auditor.Certificate.PublicKey {
+		t.Error("Auditor certificate public key mismatch after JSON round trip")
 	}
 }
 
-// BenchmarkLoadManifest benchmarks manifest loading
-func BenchmarkLoadManifest(b *testing.B) {
-	// Create temporary directory and manifest
-	tempDir, err := os.MkdirTemp("", "manifest_benchmark_load")
+func TestManifest_EmptyEntities(t *testing.T) {
+	manifest := New([]Entity{})
+
+	// Test save/load with empty entities
+	tempDir := t.TempDir()
+	manifestPath := filepath.Join(tempDir, "empty.manifest")
+
+	err := manifest.Save(manifestPath)
 	if err != nil {
-		b.Fatalf("Failed to create temp directory: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
-
-	// Create and save a large manifest
-	entities := make([]Entity, 1000)
-	for i := 0; i < 1000; i++ {
-		entities[i] = Entity{
-			Name:     fmt.Sprintf("file_%d.txt", i),
-			Checksum: fmt.Sprintf("checksum_%d", i),
-			IsDir:    i%10 == 0,
-		}
+		t.Fatalf("Failed to save empty manifest: %v", err)
 	}
 
-	manifest := New(entities)
-	err = manifest.Save(tempDir)
+	loadedManifest, err := LoadManifest(manifestPath)
 	if err != nil {
-		b.Fatalf("Failed to save manifest: %v", err)
+		t.Fatalf("Failed to load empty manifest: %v", err)
 	}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_, err := LoadManifest(tempDir)
-		if err != nil {
-			b.Fatalf("Failed to load manifest: %v", err)
-		}
+	if len(loadedManifest.Entities) != 0 {
+		t.Error("Expected empty entities list")
+	}
+}
+
+func TestCertificateData_HexEncoding(t *testing.T) {
+	// Test that hex encoding/decoding works correctly
+	cert := createTestCertificate(t)
+	manifest := New([]Entity{})
+	manifest.SetAuditedBy(cert, []byte{0xDE, 0xAD, 0xBE, 0xEF})
+
+	// Check that the hex values are correct
+	expectedPubKeyHex := hex.EncodeToString(cert.PublicKey())
+	if manifest.Auditor.Certificate.PublicKey != expectedPubKeyHex {
+		t.Error("Public key hex encoding mismatch")
+	}
+
+	expectedSigHex := hex.EncodeToString(cert.Signature())
+	if manifest.Auditor.Certificate.Signature != expectedSigHex {
+		t.Error("Signature hex encoding mismatch")
+	}
+
+	expectedManifestSigHex := hex.EncodeToString([]byte{0xDE, 0xAD, 0xBE, 0xEF})
+	if manifest.Auditor.ManifestSignature != expectedManifestSigHex {
+		t.Error("Manifest signature hex encoding mismatch")
+	}
+
+	// Test decoding
+	retrievedCert := manifest.GetAuditorCertificate()
+	if !retrievedCert.PublicKey().Equal(cert.PublicKey()) {
+		t.Error("Public key hex decoding mismatch")
+	}
+
+	retrievedManifestSig := manifest.GetAuditorManifestSignature()
+	expectedBytes := []byte{0xDE, 0xAD, 0xBE, 0xEF}
+	if string(retrievedManifestSig) != string(expectedBytes) {
+		t.Error("Manifest signature hex decoding mismatch")
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/tomekjarosik/bytecheck/pkg/certification"
 	"github.com/tomekjarosik/bytecheck/pkg/generator"
 	"github.com/tomekjarosik/bytecheck/pkg/scanner"
 	"os"
@@ -21,7 +22,7 @@ func TestVerifyCommand(t *testing.T) {
 
 	// First, generate manifests
 	sc := scanner.New()
-	gen := generator.New(sc)
+	gen := generator.New(sc, certification.NewFakeSigner())
 	ctx := context.Background()
 	err := gen.Generate(ctx, tempDir)
 	if err != nil {
@@ -53,7 +54,8 @@ func TestVerifyCommandWithChangedFiles(t *testing.T) {
 
 	// Generate manifest
 	sc := scanner.New()
-	gen := generator.New(sc)
+	fakeSigner := certification.NewFakeSigner()
+	gen := generator.New(sc, fakeSigner)
 	ctx := context.Background()
 	err = gen.Generate(ctx, tempDir)
 	if err != nil {
@@ -117,7 +119,8 @@ func TestVerifyCommandDefaultDirectory(t *testing.T) {
 
 	// Generate manifest
 	sc := scanner.New()
-	gen := generator.New(sc)
+	fakeSigner := certification.NewFakeSigner()
+	gen := generator.New(sc, fakeSigner)
 	ctx := context.Background()
 	err = gen.Generate(ctx, ".")
 	if err != nil {

@@ -151,7 +151,7 @@ func (pm *ProgressMonitor) PrintFinalLine(w io.Writer, stats *scanner.Stats) {
 
 	clearProgressLine(w)
 
-	fmt.Fprintf(w, "\r%sfinal:%s %8d files, %4d dirs, %s, speed: %.1f MB/s over %.1f seconds - %s",
+	fmt.Fprintf(w, "\r%sfinal:%s %8d files, %4d dirs, %s, speed: %.1f MB/s over %.1f seconds - %s\n",
 		ColorCyan, ColorReset,
 		stats.FilesProcessed(),
 		stats.DirsProcessed(),

@@ -1,15 +1,29 @@
 package cmd
 
 import (
+	"fmt"
 	"github.com/spf13/cobra"
+	"github.com/tomekjarosik/bytecheck/pkg/certification"
 	"github.com/tomekjarosik/bytecheck/pkg/generator"
 	"github.com/tomekjarosik/bytecheck/pkg/scanner"
 	"github.com/tomekjarosik/bytecheck/pkg/ui"
 	"time"
 )
 
+func loadCryptoSigner(keyPath *string) (signer certification.Signer, err error) {
+	signer = certification.NewFakeSigner()
+	if keyPath != nil && len(*keyPath) > 0 {
+		signer, err = certification.NewEd25519SignerFromFile(*keyPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create signer from file: %w", err)
+		}
+	}
+	return signer, nil
+}
+
 func NewGenerateCmd() *cobra.Command {
 	var freshnessInterval time.Duration
+	var privateKeyPath *string
 	generateCmd := cobra.Command{
 		Use:   "generate [directory]",
 		Short: "Generate and write manifest files recursively",
@@ -31,12 +45,16 @@ recalculating directories where the manifest is newer than the freshness interva
 			if freshnessInterval > 0 {
 				scannerOpts = append(scannerOpts, scanner.WithManifestFreshnessLimit(freshnessInterval))
 			}
+			signer, err := loadCryptoSigner(privateKeyPath)
+			if err != nil {
+				return err
+			}
 			sc := scanner.New(scannerOpts...)
-			gen := generator.New(sc)
+			gen := generator.New(sc, signer)
 			pm := ui.NewProgressMonitor(3 * time.Second)
 			pm.MonitorInBackground(cmd.Context(), cmd.OutOrStdout(), progressCh)
 
-			err := gen.Generate(cmd.Context(), targetDir)
+			err = gen.Generate(cmd.Context(), targetDir)
 			close(progressCh)
 			pm.Wait()
 			if err != nil {
@@ -52,5 +70,7 @@ recalculating directories where the manifest is newer than the freshness interva
 	generateCmd.Flags().DurationVarP(&freshnessInterval, "freshness-interval", "", 0,
 		"Generate will reuse recently generated manifests if they are not older than this interval,"+
 			" (e.g., 5s, 1m, 24h)")
+	privateKeyPath = generateCmd.Flags().StringP("private-key-path", "", "",
+		"Path to ed25519 private key")
 	return &generateCmd
 }

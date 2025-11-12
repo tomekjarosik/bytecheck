@@ -1,9 +1,12 @@
 package manifest
 
 import (
+	"crypto/ed25519"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 	"time"
 )
 
@@ -15,9 +18,46 @@ type Entity struct {
 	IsDir    bool   `json:"isDir"`
 }
 
+// Certificate defines the interface for any certificate structure.
+type Certificate interface {
+	Name() string
+	PublicKey() ed25519.PublicKey
+	Signature() []byte
+	IssuerPublicKey() ed25519.PublicKey
+}
+
+// SimpleCertificate implements Certificate interface
+type SimpleCertificate struct {
+	CertName     string            `json:"-"`
+	PubKey       ed25519.PublicKey `json:"-"`
+	Sig          []byte            `json:"-"`
+	IssuerPubKey ed25519.PublicKey `json:"-"`
+}
+
+func (c *SimpleCertificate) Name() string                       { return c.CertName }
+func (c *SimpleCertificate) PublicKey() ed25519.PublicKey       { return c.PubKey }
+func (c *SimpleCertificate) Signature() []byte                  { return c.Sig }
+func (c *SimpleCertificate) IssuerPublicKey() ed25519.PublicKey { return c.IssuerPubKey }
+
+// CertificateData is the JSON-serializable representation
+type CertificateData struct {
+	Name            string `json:"name"`
+	PublicKey       string `json:"publicKey"`
+	Signature       string `json:"signature"`
+	IssuerPublicKey string `json:"issuerPublicKey"`
+}
+
+// AuditorData is the JSON-serializable representation
+type AuditorData struct {
+	Timestamp         time.Time       `json:"timestamp"`
+	Certificate       CertificateData `json:"certificate"`
+	ManifestSignature string          `json:"manifestSignature"`
+}
+
 type Manifest struct {
-	Entities []Entity `json:"entities"`
-	HMAC     string   `json:"hmac"`
+	Entities []Entity     `json:"entities"`
+	HMAC     string       `json:"hmac"`
+	Auditor  *AuditorData `json:"auditor,omitempty"`
 }
 
 // New creates a new manifest with the given entities
@@ -28,6 +68,51 @@ func New(entities []Entity) *Manifest {
 	return &Manifest{
 		Entities: entities,
 	}
+}
+
+// SetAuditedBy sets the auditor using the Certificate interface
+func (m *Manifest) SetAuditedBy(cert Certificate, manifestSignature []byte) {
+	if cert == nil {
+		m.Auditor = nil
+		return
+	}
+	m.Auditor = &AuditorData{
+		Timestamp: time.Now(),
+		Certificate: CertificateData{
+			Name:            cert.Name(),
+			PublicKey:       hex.EncodeToString(cert.PublicKey()),
+			Signature:       hex.EncodeToString(cert.Signature()),
+			IssuerPublicKey: hex.EncodeToString(cert.IssuerPublicKey()),
+		},
+		ManifestSignature: hex.EncodeToString(manifestSignature),
+	}
+}
+
+// GetAuditorCertificate returns the auditor's certificate as a Certificate interface
+func (m *Manifest) GetAuditorCertificate() Certificate {
+	if m.Auditor == nil {
+		return nil
+	}
+
+	pubKey, _ := hex.DecodeString(m.Auditor.Certificate.PublicKey)
+	sig, _ := hex.DecodeString(m.Auditor.Certificate.Signature)
+	issuerPubKey, _ := hex.DecodeString(m.Auditor.Certificate.IssuerPublicKey)
+
+	return &SimpleCertificate{
+		CertName:     m.Auditor.Certificate.Name,
+		PubKey:       pubKey,
+		Sig:          sig,
+		IssuerPubKey: issuerPubKey,
+	}
+}
+
+// GetAuditorManifestSignature returns the decoded manifest signature
+func (m *Manifest) GetAuditorManifestSignature() []byte {
+	if m.Auditor == nil {
+		return nil
+	}
+	sig, _ := hex.DecodeString(m.Auditor.ManifestSignature)
+	return sig
 }
 
 // LoadManifest loads a manifest from the given directory
@@ -75,19 +160,16 @@ func (m *Manifest) Save(manifestPath string) error {
 
 // Touch updates the manifest file's modification time without changing content
 func (m *Manifest) Touch(manifestPath string) error {
-	// Update the file's access and modification time to now
 	now := time.Now()
 	return os.Chtimes(manifestPath, now, now)
 }
 
 // GetModTime returns the manifest file's modification time
 func GetModTime(manifestPath string) (time.Time, error) {
-
 	info, err := os.Stat(manifestPath)
 	if err != nil {
 		return time.Time{}, err
 	}
-
 	return info.ModTime(), nil
 }
 
@@ -116,7 +198,6 @@ func LoadManifestIfFresh(manifestPath string, freshnessLimit *time.Duration) (*M
 
 // calculateHMAC computes HMAC for the manifest (excluding the HMAC field itself)
 func (m *Manifest) calculateHMAC() error {
-	// Create a copy without HMAC to avoid circular dependency
 	manifestCopy := &Manifest{
 		Entities: m.Entities,
 		// HMAC field is omitted
@@ -129,4 +210,10 @@ func (m *Manifest) calculateHMAC() error {
 
 	m.HMAC = calculateHMAC(data)
 	return nil
+}
+
+func (m *Manifest) DataWithoutAuditor() ([]byte, error) {
+	manifestCopy := *m
+	manifestCopy.Auditor = nil
+	return json.Marshal(&manifestCopy)
 }

@@ -24,6 +24,21 @@ type Result struct {
 	Stats             *scanner.Stats
 }
 
+func (r *Result) ReportDirectoryFailure(rootPath, dirPath string, differences []manifest.EntityDifference) {
+	r.AllValid = false
+	relPath, pathErr := filepath.Rel(rootPath, dirPath)
+	if pathErr != nil {
+		relPath = dirPath
+	}
+	if relPath == "." {
+		relPath = "<root>"
+	}
+	r.Failures = append(r.Failures, DirectoryFailure{
+		Path:        relPath,
+		Differences: differences,
+	})
+}
+
 // Verifier handles verification operations
 type Verifier struct {
 	scanner *scanner.Scanner
@@ -65,33 +80,23 @@ func (v *Verifier) Verify(ctx context.Context, rootPath string) (*Result, error)
 
 		result.ManifestsFound++
 
+		// TODO(tjarosik): Here verify signature if needed
+
 		// Compare manifests using the standalone function
 		valid, differences, compareErr := manifest.CompareManifests(existingManifest, computedManifest)
 		if compareErr != nil {
 			return fmt.Errorf("failed to compare manifests for %s: %w", manifestPath, compareErr)
 		}
-
-		if valid {
-			result.ManifestsVerified++
-			// Touch the manifest to update its timestamp without changing content
-			if touchErr := existingManifest.Touch(manifestPath); touchErr != nil {
-				return fmt.Errorf("failed to touch manifest for %s: %w", manifestPath, touchErr)
-			}
-		} else {
-			result.AllValid = false
-			relPath, pathErr := filepath.Rel(rootPath, dirPath)
-			if pathErr != nil {
-				relPath = dirPath
-			}
-			if relPath == "." {
-				relPath = "<root>"
-			}
-			result.Failures = append(result.Failures, DirectoryFailure{
-				Path:        relPath,
-				Differences: differences,
-			})
+		if !valid {
+			result.ReportDirectoryFailure(rootPath, dirPath, differences)
+			return nil
 		}
 
+		result.ManifestsVerified++
+		// Touch the manifest to update its timestamp without changing content
+		if touchErr := existingManifest.Touch(manifestPath); touchErr != nil {
+			return fmt.Errorf("failed to touch manifest for %s: %w", manifestPath, touchErr)
+		}
 		return nil
 	})
 
