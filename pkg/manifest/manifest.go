@@ -22,6 +22,9 @@ type Manifest struct {
 
 // New creates a new manifest with the given entities
 func New(entities []Entity) *Manifest {
+	sort.Slice(entities, func(i, j int) bool {
+		return entities[i].Name < entities[j].Name
+	})
 	return &Manifest{
 		Entities: entities,
 	}
@@ -41,6 +44,10 @@ func LoadManifest(manifestPath string) (*Manifest, error) {
 	if err := json.Unmarshal(data, &m); err != nil {
 		return nil, fmt.Errorf("failed to parse manifest: %w", err)
 	}
+	sort.Slice(m.Entities, func(i, j int) bool {
+		return m.Entities[i].Name < m.Entities[j].Name
+	})
+
 	loadedHMAC := m.HMAC
 	err = m.calculateHMAC()
 	if err != nil {
