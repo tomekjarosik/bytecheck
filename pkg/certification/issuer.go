@@ -2,7 +2,6 @@ package certification
 
 import (
 	"crypto/ed25519"
-	"encoding/hex"
 	"errors"
 	"fmt"
 )
@@ -10,7 +9,6 @@ import (
 // Certificate defines the interface for any certificate structure.
 // This decouples verification logic from the concrete cert implementation.
 type Certificate interface {
-	Name() string
 
 	// PublicKey returns the public key of the certificate's subject.
 	PublicKey() ed25519.PublicKey
@@ -20,72 +18,76 @@ type Certificate interface {
 
 	// IssuerPublicKey returns the public key of the certificate's issuer.
 	IssuerPublicKey() ed25519.PublicKey
+
+	// IssuerReference return a string describing an issuer which can be validated externally (e.g. github keys)
+	IssuerReference() string
+
+	Verify() bool
 }
 
 // SimpleCertificate is the concrete implementation of the Certificate interface.
 // This struct holds the actual data and handles JSON marshaling directly.
 type SimpleCertificate struct {
-	CertName     string `json:"name"`
-	PubKey       string `json:"publicKey"`       // Hex-encoded
-	Sig          string `json:"signature"`       // Hex-encoded
-	IssuerPubKey string `json:"issuerPublicKey"` // Hex-encoded
+	PubKey       ed25519.PublicKey `json:"-"`
+	Sig          []byte            `json:"-"`
+	IssuerPubKey ed25519.PublicKey `json:"-"`
+	IssuerRef    string            `json:"-"`
 }
 
 // NewSimpleCertificate creates a new certificate struct.
-func NewSimpleCertificate(name string, pubKey, issuerPubKey ed25519.PublicKey, sig []byte) *SimpleCertificate {
+func NewSimpleCertificate(pubKey, issuerPubKey ed25519.PublicKey, issuerRef string, sig []byte) *SimpleCertificate {
 	return &SimpleCertificate{
-		CertName:     name,
-		PubKey:       hex.EncodeToString(pubKey),
-		Sig:          hex.EncodeToString(sig),
-		IssuerPubKey: hex.EncodeToString(issuerPubKey),
+		PubKey:       pubKey,
+		Sig:          sig,
+		IssuerPubKey: issuerPubKey,
+		IssuerRef:    issuerRef,
 	}
 }
 
-// Name implements the Certificate interface.
-func (c *SimpleCertificate) Name() string {
-	return c.CertName
+// IssuerReference implements the Certificate interface
+func (c *SimpleCertificate) IssuerReference() string {
+	return c.IssuerRef
 }
 
 // PublicKey implements the Certificate interface.
 func (c *SimpleCertificate) PublicKey() ed25519.PublicKey {
-	key, _ := hex.DecodeString(c.PubKey)
-	return key
+	return c.PubKey
 }
 
 // Signature implements the Certificate interface.
 func (c *SimpleCertificate) Signature() []byte {
-	sig, _ := hex.DecodeString(c.Sig)
-	return sig
+	return c.Sig
 }
 
 // IssuerPublicKey implements the Certificate interface.
 func (c *SimpleCertificate) IssuerPublicKey() ed25519.PublicKey {
-	key, _ := hex.DecodeString(c.IssuerPubKey)
-	return key
+	return c.IssuerPubKey
+}
+
+// dataToSign concatenates the public key and reference to create a consistent payload for signing and verification.
+func (c *SimpleCertificate) dataToSign() []byte {
+	return append(c.PubKey[:], []byte(c.IssuerRef)...)
 }
 
 // IssueCertificate creates a new certificate by signing a subject's public key
 // with an issuer's Signer.
-func IssueCertificate(name string, subjectPublicKey ed25519.PublicKey, issuer Signer) (Certificate, error) {
+func IssueCertificate(subjectPublicKey ed25519.PublicKey, issuer Signer, issuerReference string) (*SimpleCertificate, error) {
 	if subjectPublicKey == nil || issuer == nil {
 		return nil, errors.New("subject public key and issuer cannot be nil")
 	}
 
+	cert := &SimpleCertificate{
+		PubKey:       subjectPublicKey,
+		IssuerRef:    issuerReference,
+		IssuerPubKey: issuer.PublicKey(),
+	}
+
 	// Sign the public key of the new certificate
-	signature, err := issuer.Sign(subjectPublicKey)
+	signature, err := issuer.Sign(cert.dataToSign())
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign subject public key: %w", err)
 	}
 
-	cert := NewSimpleCertificate(name, subjectPublicKey, issuer.PublicKey(), signature)
+	cert.Sig = signature
 	return cert, nil
-}
-
-// CreateRootCertificate creates a self-signed root certificate from a Signer.
-func CreateRootCertificate(name string, rootSigner Signer) (Certificate, error) {
-	if rootSigner == nil {
-		return nil, errors.New("root signer cannot be nil")
-	}
-	// The signer issues a certificate for its own public key
-	return IssueCertificate(name, rootSigner.PublicKey(), rootSigner)
 }

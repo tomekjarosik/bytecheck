@@ -11,6 +11,7 @@ var ErrNotImplemented = errors.New("not implemented")
 type Signer interface {
 	Sign(data []byte) ([]byte, error)
 	PublicKey() ed25519.PublicKey
+	Reference() string
 	Close() error
 }
 
@@ -19,22 +20,21 @@ var _ Signer = (*Ed25519Signer)(nil)
 // Ed25519Signer is an implementation of the Signer interface
 // that holds a private key in memory.
 type Ed25519Signer struct {
-	privKey ed25519.PrivateKey
-	pubKey  ed25519.PublicKey
+	privKey   ed25519.PrivateKey
+	reference string
 }
 
-// NewEd25519Signer generates a new key pair and returns a
-// Signer implementation.
-func NewEd25519Signer(pubKey ed25519.PublicKey, privKey ed25519.PrivateKey) *Ed25519Signer {
+// NewEd25519Signer creates a new Signer from a private key.
+func NewEd25519Signer(privKey ed25519.PrivateKey, reference string) *Ed25519Signer {
 	return &Ed25519Signer{
-		privKey: privKey,
-		pubKey:  pubKey,
+		privKey:   privKey,
+		reference: reference,
 	}
 }
 
 // NewEd25519SignerFromFile reads an SSH-formatted ed25519 private key from a file
 // and returns a new Signer. It will prompt for a passphrase if the key is encrypted.
-func NewEd25519SignerFromFile(filePath string) (*Ed25519Signer, error) {
+func NewEd25519SignerFromFile(filePath string, reference string) (*Ed25519Signer, error) {
 	reader := NewEd25519KeyReader()
 
 	privateKey, err := reader.ReadKeyFromFile(filePath)
@@ -42,16 +42,7 @@ func NewEd25519SignerFromFile(filePath string) (*Ed25519Signer, error) {
 		return nil, fmt.Errorf("could not read SSH private key from file: %w", err)
 	}
 
-	publicKey, ok := privateKey.Public().(ed25519.PublicKey)
-	if !ok {
-		return nil, fmt.Errorf("failed to derive public key from private key")
-	}
-
-	// 4. Create the signer using the loaded keys
-	return &Ed25519Signer{
-		privKey: privateKey,
-		pubKey:  publicKey,
-	}, nil
+	return NewEd25519Signer(privateKey, reference), nil
 }
 
 // Sign implements the Signer interface.
@@ -64,7 +55,10 @@ func (s *Ed25519Signer) Sign(data []byte) ([]byte, error) {
 }
 
 func (s *Ed25519Signer) PublicKey() ed25519.PublicKey {
-	return s.pubKey
+	return s.privKey.Public().(ed25519.PublicKey)
+}
+func (s *Ed25519Signer) Reference() string {
+	return s.reference
 }
 
 func (s *Ed25519Signer) Close() error {
@@ -88,3 +82,5 @@ func (s *FakeSigner) PublicKey() ed25519.PublicKey {
 func (s *FakeSigner) Close() error {
 	return nil
 }
+
+func (s *FakeSigner) Reference() string { return "fake" }

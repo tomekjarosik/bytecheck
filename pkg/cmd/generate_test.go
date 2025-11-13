@@ -106,7 +106,7 @@ func TestGenerateCmd_WithLongFreshnessLimitButCorruptedManifest(t *testing.T) {
 	tempDir := t.TempDir()
 
 	manifestPath := CreateFreshManifest(t, tempDir)
-	err := CorruptFileByOneByte(t, manifestPath, 0)
+	err := CorruptFileByOneByte(t, manifestPath, 123)
 	require.NoError(t, err)
 
 	cmd := NewGenerateCmd()

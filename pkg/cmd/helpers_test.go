@@ -29,20 +29,20 @@ func CreateFreshManifest(t *testing.T, tempDir string) (manifestPath string) {
 	t.Helper()
 	manifestPath = filepath.Join(tempDir, ".bytecheck.manifest")
 	manifestContent := `{
-		  "entities": [
-			{
-			  "name": "test",
-			  "checksum": "3c17022aabcf48e38969f330d4b35f15c2e40023b1e4ffb8a7c7e86aabf7356a",
-			  "isDir": true
-			},
-			{
-			  "name": "config.go",
-			  "checksum": "52729c59f0a01d7982cfb541b7eae6ed9f9064ba704121bf6ebf33ebe3ea1efc",
-			  "isDir": false
-			}
-		  ],
-		  "hmac": "05c4a0eb225733eb0f82914a6e47a54fe56b822aacbb6947d52566bb45e724ec"
-		}`
+  "entities": [
+    {
+      "name": "config.go",
+      "checksum": "52729c59f0a01d7982cfb541b7eae6ed9f9064ba704121bf6ebf33ebe3ea1efc",
+      "isDir": false
+    },
+    {
+      "name": "test",
+      "checksum": "3c17022aabcf48e38969f330d4b35f15c2e40023b1e4ffb8a7c7e86aabf7356a",
+      "isDir": true
+    }
+  ],
+  "hmac": "87024b7993879875c3909b7acfd0256933d4b72539c24d9ad0071ba6f2ffee26"
+}`
 	require.NoError(t, os.WriteFile(manifestPath, []byte(manifestContent), 0644))
 	now := time.Now()
 	require.NoError(t, os.Chtimes(manifestPath, now, now))

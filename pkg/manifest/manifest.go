@@ -20,10 +20,10 @@ type Entity struct {
 
 // Certificate defines the interface for any certificate structure.
 type Certificate interface {
-	Name() string
 	PublicKey() ed25519.PublicKey
 	Signature() []byte
 	IssuerPublicKey() ed25519.PublicKey
+	IssuerReference() string
 }
 
 // SimpleCertificate implements Certificate interface
@@ -32,12 +32,14 @@ type SimpleCertificate struct {
 	PubKey       ed25519.PublicKey `json:"-"`
 	Sig          []byte            `json:"-"`
 	IssuerPubKey ed25519.PublicKey `json:"-"`
+	IssuerRef    string            `json:"-"`
 }
 
 func (c *SimpleCertificate) Name() string                       { return c.CertName }
 func (c *SimpleCertificate) PublicKey() ed25519.PublicKey       { return c.PubKey }
 func (c *SimpleCertificate) Signature() []byte                  { return c.Sig }
 func (c *SimpleCertificate) IssuerPublicKey() ed25519.PublicKey { return c.IssuerPubKey }
+func (c *SimpleCertificate) IssuerReference() string            { return c.IssuerRef }
 
 // CertificateData is the JSON-serializable representation
 type CertificateData struct {
@@ -45,6 +47,7 @@ type CertificateData struct {
 	PublicKey       string `json:"publicKey"`
 	Signature       string `json:"signature"`
 	IssuerPublicKey string `json:"issuerPublicKey"`
+	IssuerRef       string `json:"issuerReference"`
 }
 
 // AuditorData is the JSON-serializable representation
@@ -79,10 +82,10 @@ func (m *Manifest) SetAuditedBy(cert Certificate, manifestSignature []byte) {
 	m.Auditor = &AuditorData{
 		Timestamp: time.Now(),
 		Certificate: CertificateData{
-			Name:            cert.Name(),
 			PublicKey:       hex.EncodeToString(cert.PublicKey()),
 			Signature:       hex.EncodeToString(cert.Signature()),
 			IssuerPublicKey: hex.EncodeToString(cert.IssuerPublicKey()),
+			IssuerRef:       cert.IssuerReference(),
 		},
 		ManifestSignature: hex.EncodeToString(manifestSignature),
 	}
@@ -99,10 +102,10 @@ func (m *Manifest) GetAuditorCertificate() Certificate {
 	issuerPubKey, _ := hex.DecodeString(m.Auditor.Certificate.IssuerPublicKey)
 
 	return &SimpleCertificate{
-		CertName:     m.Auditor.Certificate.Name,
 		PubKey:       pubKey,
 		Sig:          sig,
 		IssuerPubKey: issuerPubKey,
+		IssuerRef:    m.Auditor.Certificate.IssuerRef,
 	}
 }
 
@@ -213,6 +216,11 @@ func (m *Manifest) calculateHMAC() error {
 }
 
 func (m *Manifest) DataWithoutAuditor() ([]byte, error) {
+	if m.HMAC == "" {
+		if err := m.calculateHMAC(); err != nil {
+			return nil, err
+		}
+	}
 	manifestCopy := *m
 	manifestCopy.Auditor = nil
 	return json.Marshal(&manifestCopy)

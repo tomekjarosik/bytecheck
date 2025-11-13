@@ -3,6 +3,7 @@ package certification
 import (
 	"crypto"
 	"crypto/ed25519"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"golang.org/x/crypto/ssh"
@@ -67,8 +68,6 @@ func (r *Ed25519KeyReader) ReadKeyFromBytes(keyData []byte) (ed25519.PrivateKey,
 		return nil, fmt.Errorf("invalid size %d for Ed25519 private key", len(*ed25519PrivateKey))
 	}
 
-	fmt.Println("Key parsed successfully")
-
 	return *ed25519PrivateKey, nil
 }
 
@@ -103,4 +102,31 @@ func (r *Ed25519KeyReader) ReadPublicKeyFromBytes(keyData []byte) (ed25519.Publi
 // GetPublicKeyFromPrivate extracts the public key from a private key
 func (r *Ed25519KeyReader) GetPublicKeyFromPrivate(privateKey ed25519.PrivateKey) ed25519.PublicKey {
 	return privateKey.Public().(ed25519.PublicKey)
+}
+
+// GenerateAndWritePrivateKey generates a new ed25519 private key and writes it to a file
+// in SSH format. The file will be created with permissions 0600.
+// The generated private key is returned.
+func GenerateAndWritePrivateKey(filePath string) (ed25519.PrivateKey, error) {
+	_, privateKey, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate ed25519 key pair: %w", err)
+	}
+	pemBlock, err := ssh.MarshalPrivateKey(privateKey, "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal private key: %w", err)
+	}
+	// Create the file with 0600 permissions (read/write for owner only).
+	// os.O_TRUNC ensures that if the file already exists, it will be truncated.
+	file, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open file for writing: %w", err)
+	}
+	defer file.Close()
+
+	if err := pem.Encode(file, pemBlock); err != nil {
+		return nil, fmt.Errorf("failed to write PEM data to file: %w", err)
+	}
+
+	return privateKey, nil
 }

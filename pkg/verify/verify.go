@@ -42,12 +42,14 @@ func (r *Result) ReportDirectoryFailure(rootPath, dirPath string, differences []
 // Verifier handles verification operations
 type Verifier struct {
 	scanner *scanner.Scanner
+	auditor ManifestAuditor
 }
 
 // New creates a new Verifier instance
-func New(sc *scanner.Scanner) *Verifier {
+func New(sc *scanner.Scanner, auditor ManifestAuditor) *Verifier {
 	return &Verifier{
 		scanner: sc,
+		auditor: auditor,
 	}
 }
 
@@ -80,7 +82,12 @@ func (v *Verifier) Verify(ctx context.Context, rootPath string) (*Result, error)
 
 		result.ManifestsFound++
 
-		// TODO(tjarosik): Here verify signature if needed
+		if v.auditor != nil {
+			auditResult := v.auditor.Verify(existingManifest)
+			if auditResult.IsAudited && auditResult.Error != nil {
+				return fmt.Errorf("manifest audit failed for %s: %w", manifestPath, auditResult.Error)
+			}
+		}
 
 		// Compare manifests using the standalone function
 		valid, differences, compareErr := manifest.CompareManifests(existingManifest, computedManifest)

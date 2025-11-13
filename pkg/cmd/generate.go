@@ -13,7 +13,7 @@ import (
 func loadCryptoSigner(keyPath *string) (signer certification.Signer, err error) {
 	signer = certification.NewFakeSigner()
 	if keyPath != nil && len(*keyPath) > 0 {
-		signer, err = certification.NewEd25519SignerFromFile(*keyPath)
+		signer, err = certification.NewEd25519SignerFromFile(*keyPath, "todo")
 		if err != nil {
 			return nil, fmt.Errorf("failed to create signer from file: %w", err)
 		}

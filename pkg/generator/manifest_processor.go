@@ -31,12 +31,12 @@ func NewSignedProcessor(rootSigner certification.Signer, manifestsGenerated *[]s
 		return nil, fmt.Errorf("failed to generate ephemeral signing key: %w", err)
 	}
 
-	cert, err := certification.IssueCertificate("test", pubKey, rootSigner)
+	cert, err := certification.IssueCertificate(pubKey, rootSigner, "todo")
 	if err != nil {
 		return nil, fmt.Errorf("failed to issue auditor certificate: %w", err)
 	}
 
-	intermediateSigner := certification.NewEd25519Signer(pubKey, privKey)
+	intermediateSigner := certification.NewEd25519Signer(privKey, "ephemeral")
 
 	return &SignedProcessor{
 		certificate:        cert,

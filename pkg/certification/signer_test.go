@@ -5,183 +5,107 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func TestNewEd25519Signer(t *testing.T) {
+// newTestSigner is a helper function to create a new Ed25519Signer for testing.
+func newTestSigner(t *testing.T, reference string) Signer {
 	pubKey, privateKey, err := ed25519.GenerateKey(nil)
-	if err != nil {
-		t.Fatalf("Failed to create key pair: %v", err)
-	}
-	signer := NewEd25519Signer(pubKey, privateKey)
+	require.NoError(t, err, "Failed to create key pair")
+	signer := NewEd25519Signer(privateKey, reference)
+	require.NotNil(t, signer)
+	require.True(t, pubKey.Equal(signer.PublicKey()))
+	return signer
+}
 
-	if signer.PublicKey() == nil {
-		t.Error("Public key should not be nil")
-	}
-
-	if len(signer.PublicKey()) != ed25519.PublicKeySize {
-		t.Errorf("Public key size should be %d, got %d", ed25519.PublicKeySize, len(signer.PublicKey()))
-	}
+func TestNewEd25519Signer(t *testing.T) {
+	signer := newTestSigner(t, "test-reference")
+	assert.NotNil(t, signer.PublicKey())
+	assert.Len(t, signer.PublicKey(), ed25519.PublicKeySize)
+	assert.Equal(t, "test-reference", signer.Reference())
 }
 
 func TestEd25519Signer_Sign(t *testing.T) {
-	pubKey, privateKey, err := ed25519.GenerateKey(nil)
-	if err != nil {
-		t.Fatalf("Failed to create key pair: %v", err)
-	}
-	signer := NewEd25519Signer(pubKey, privateKey)
-
+	signer := newTestSigner(t, "test-reference")
 	testData := []byte("test message to sign")
+
 	signature, err := signer.Sign(testData)
-	if err != nil {
-		t.Fatalf("Failed to sign data: %v", err)
-	}
+	require.NoError(t, err, "Failed to sign data")
 
-	if len(signature) != ed25519.SignatureSize {
-		t.Errorf("Signature size should be %d, got %d", ed25519.SignatureSize, len(signature))
-	}
-
-	// Verify the signature
-	if !ed25519.Verify(signer.PublicKey(), testData, signature) {
-		t.Error("Signature verification failed")
-	}
+	assert.Len(t, signature, ed25519.SignatureSize)
+	assert.True(t, ed25519.Verify(signer.PublicKey(), testData, signature), "Signature verification failed")
 }
 
 func TestEd25519Signer_Close(t *testing.T) {
-	pubKey, privateKey, err := ed25519.GenerateKey(nil)
-	if err != nil {
-		t.Fatalf("Failed to create key pair: %v", err)
-	}
-	signer := NewEd25519Signer(pubKey, privateKey)
-
-	err = signer.Close()
-	if err != nil {
-		t.Errorf("Close should not return error, got: %v", err)
-	}
+	signer := newTestSigner(t, "test-reference")
+	assert.NoError(t, signer.Close(), "Close should not return an error")
 }
 
 func TestNewEd25519SignerFromFile(t *testing.T) {
-	// Create a temporary directory
-	tempDir := t.TempDir()
-	keyFile := filepath.Join(tempDir, "test_key")
+	keyFile := filepath.Join(t.TempDir(), "test_key")
+	reference := "file-key-reference"
 
-	// Generate a key pair and write the private key to file
-	_, privateKey, err := ed25519.GenerateKey(nil)
-	if err != nil {
-		t.Fatalf("Failed to generate key pair: %v", err)
-	}
+	privateKey, err := GenerateAndWritePrivateKey(keyFile)
+	require.NoError(t, err)
 
-	err = os.WriteFile(keyFile, privateKey, 0600)
-	if err != nil {
-		t.Fatalf("Failed to write key file: %v", err)
-	}
+	signer, err := NewEd25519SignerFromFile(keyFile, reference)
+	require.NoError(t, err, "Failed to create signer from file")
 
-	// Create signer from file
-	signer, err := NewEd25519SignerFromFile(keyFile)
-	if err != nil {
-		t.Fatalf("Failed to create signer from file: %v", err)
-	}
+	expectedPublicKey := privateKey.Public().(ed25519.PublicKey)
+	assert.True(t, signer.PublicKey().Equal(expectedPublicKey), "Public key doesn't match expected key")
+	assert.Equal(t, reference, signer.Reference())
 
-	// Test that public key matches
-	expectedPublicKey, ok := privateKey.Public().(ed25519.PublicKey)
-	if !ok {
-		t.Fatal("Failed to extract public key")
-	}
-
-	if !signer.PublicKey().Equal(expectedPublicKey) {
-		t.Error("Public key doesn't match expected key")
-	}
-
-	// Test signing
 	testData := []byte("test message")
 	signature, err := signer.Sign(testData)
-	if err != nil {
-		t.Fatalf("Failed to sign data: %v", err)
-	}
+	require.NoError(t, err, "Failed to sign data")
 
-	if !ed25519.Verify(signer.PublicKey(), testData, signature) {
-		t.Error("Signature verification failed")
-	}
+	assert.True(t, ed25519.Verify(signer.PublicKey(), testData, signature), "Signature verification failed")
 }
 
-func TestNewEd25519SignerFromFile_FileNotFound(t *testing.T) {
-	_, err := NewEd25519SignerFromFile("nonexistent_file")
-	if err == nil {
-		t.Error("Expected error for nonexistent file")
-	}
-}
+func TestNewEd25519SignerFromFile_Failures(t *testing.T) {
+	t.Run("File not found", func(t *testing.T) {
+		_, err := NewEd25519SignerFromFile("nonexistent_file", "test")
+		assert.Error(t, err)
+	})
 
-func TestNewEd25519SignerFromFile_InvalidKeySize(t *testing.T) {
-	tempDir := t.TempDir()
-	keyFile := filepath.Join(tempDir, "invalid_key")
+	t.Run("Invalid key format", func(t *testing.T) {
+		keyFile := filepath.Join(t.TempDir(), "invalid_key")
+		err := os.WriteFile(keyFile, []byte("this is not a valid key"), 0600)
+		require.NoError(t, err)
+		_, err = NewEd25519SignerFromFile(keyFile, "test")
+		assert.Error(t, err)
+	})
 
-	// Write invalid key data (wrong size)
-	invalidKey := make([]byte, 16) // Too short
-	err := os.WriteFile(keyFile, invalidKey, 0600)
-	if err != nil {
-		t.Fatalf("Failed to write invalid key file: %v", err)
-	}
-
-	_, err = NewEd25519SignerFromFile(keyFile)
-	if err == nil {
-		t.Error("Expected error for invalid key size")
-	}
-}
-
-func TestNewEd25519SignerFromFile_EmptyFile(t *testing.T) {
-	tempDir := t.TempDir()
-	keyFile := filepath.Join(tempDir, "empty_key")
-
-	// Write empty file
-	err := os.WriteFile(keyFile, []byte{}, 0600)
-	if err != nil {
-		t.Fatalf("Failed to write empty key file: %v", err)
-	}
-
-	_, err = NewEd25519SignerFromFile(keyFile)
-	if err == nil {
-		t.Error("Expected error for empty key file")
-	}
+	t.Run("Empty key file", func(t *testing.T) {
+		keyFile := filepath.Join(t.TempDir(), "empty_key")
+		err := os.WriteFile(keyFile, []byte{}, 0600)
+		require.NoError(t, err)
+		_, err = NewEd25519SignerFromFile(keyFile, "test")
+		assert.Error(t, err)
+	})
 }
 
 func TestEd25519Signer_SignConsistency(t *testing.T) {
-	pubKey, privateKey, err := ed25519.GenerateKey(nil)
-	if err != nil {
-		t.Fatalf("Failed to create key pair: %v", err)
-	}
-	signer := NewEd25519Signer(pubKey, privateKey)
-
+	signer := newTestSigner(t, "test-reference")
 	testData := []byte("consistent signing test")
 
-	// Sign the same data multiple times
 	sig1, err := signer.Sign(testData)
-	if err != nil {
-		t.Fatalf("Failed to sign data first time: %v", err)
-	}
+	require.NoError(t, err)
 
 	sig2, err := signer.Sign(testData)
-	if err != nil {
-		t.Fatalf("Failed to sign data second time: %v", err)
-	}
+	require.NoError(t, err)
 
-	// Ed25519 signatures should be deterministic
-	if string(sig1) != string(sig2) {
-		t.Error("Ed25519 signatures should be deterministic")
-	}
+	assert.Equal(t, sig1, sig2, "Ed25519 signatures should be deterministic")
 }
 
 func TestEd25519Signer_SignEmptyData(t *testing.T) {
-	pubKey, privateKey, err := ed25519.GenerateKey(nil)
-	if err != nil {
-		t.Fatalf("Failed to create key pair: %v", err)
-	}
-	signer := NewEd25519Signer(pubKey, privateKey)
+	signer := newTestSigner(t, "test-reference")
+	emptyData := []byte{}
 
-	signature, err := signer.Sign([]byte{})
-	if err != nil {
-		t.Fatalf("Failed to sign empty data: %v", err)
-	}
+	signature, err := signer.Sign(emptyData)
+	require.NoError(t, err, "Failed to sign empty data")
 
-	if !ed25519.Verify(signer.PublicKey(), []byte{}, signature) {
-		t.Error("Failed to verify signature of empty data")
-	}
+	assert.True(t, ed25519.Verify(signer.PublicKey(), emptyData, signature), "Failed to verify signature of empty data")
 }

@@ -2,8 +2,8 @@ package certification
 
 import (
 	"crypto/ed25519"
-	"encoding/hex"
-	"encoding/json"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"testing"
 )
 
@@ -20,7 +20,7 @@ func TestNewSimpleCertificate(t *testing.T) {
 
 	signature := ed25519.Sign(privKey, pubKey)
 
-	cert := NewSimpleCertificate("test", pubKey, issuerPubKey, signature)
+	cert := NewSimpleCertificate(pubKey, issuerPubKey, "test", signature)
 
 	if !cert.PublicKey().Equal(pubKey) {
 		t.Error("Public key mismatch")
@@ -33,179 +33,74 @@ func TestNewSimpleCertificate(t *testing.T) {
 	}
 }
 
-func TestSimpleCertificate_MarshalUnmarshalJSON(t *testing.T) {
-	pubKey, privKey, err := ed25519.GenerateKey(nil)
-	if err != nil {
-		t.Fatalf("Failed to generate key pair: %v", err)
-	}
+func TestIssueCertificateAndVerify(t *testing.T) {
+	_, issuerPrivKey, err := ed25519.GenerateKey(nil)
+	require.NoError(t, err, "Failed to create issuer key pair")
+	issuerSigner := NewEd25519Signer(issuerPrivKey, "github:issuer.keys")
 
-	issuerPubKey, _, err := ed25519.GenerateKey(nil)
-	if err != nil {
-		t.Fatalf("Failed to generate issuer key pair: %v", err)
-	}
-
-	signature := ed25519.Sign(privKey, pubKey)
-	originalCert := NewSimpleCertificate("test", pubKey, issuerPubKey, signature)
-
-	// Test MarshalJSON
-	jsonData, err := json.Marshal(originalCert)
-	if err != nil {
-		t.Fatalf("Failed to marshal certificate: %v", err)
-	}
-
-	// Test UnmarshalJSON
-	var unmarshaled SimpleCertificate
-	err = json.Unmarshal(jsonData, &unmarshaled)
-	if err != nil {
-		t.Fatalf("Failed to unmarshal certificate: %v", err)
-	}
-
-	if !unmarshaled.PublicKey().Equal(originalCert.PublicKey()) {
-		t.Error("Public key mismatch after JSON round trip")
-	}
-	// Verify that the unmarshaled certificate matches the original
-	if !unmarshaled.PublicKey().Equal(originalCert.PublicKey()) {
-		t.Error("Public key mismatch after JSON round trip")
-	}
-	if !unmarshaled.IssuerPublicKey().Equal(originalCert.IssuerPublicKey()) {
-		t.Error("Issuer public key mismatch after JSON round trip")
-	}
-	if string(unmarshaled.Signature()) != string(originalCert.Signature()) {
-		t.Error("Signature mismatch after JSON round trip")
-	}
-}
-
-func TestIssueCertificate(t *testing.T) {
-	// Create issuer signer
-	pubKey, privateKey, err := ed25519.GenerateKey(nil)
-	if err != nil {
-		t.Fatalf("Failed to create key pair: %v", err)
-	}
-	issuerSigner := NewEd25519Signer(pubKey, privateKey)
-
-	// Create subject key pair
 	subjectPubKey, _, err := ed25519.GenerateKey(nil)
-	if err != nil {
-		t.Fatalf("Failed to generate subject key pair: %v", err)
-	}
+	require.NoError(t, err, "Failed to generate subject key pair")
 
-	// Issue certificate
-	cert, err := IssueCertificate("test", subjectPubKey, issuerSigner)
-	if err != nil {
-		t.Fatalf("Failed to issue certificate: %v", err)
-	}
+	const issuerRef = "github:subject-owner.keys"
+	cert, err := IssueCertificate(subjectPubKey, issuerSigner, issuerRef)
+	require.NoError(t, err, "Failed to issue certificate")
+	require.NotNil(t, cert)
 
-	// Verify certificate properties
-	if !cert.PublicKey().Equal(subjectPubKey) {
-		t.Error("Certificate public key doesn't match subject public key")
-	}
-	if !cert.IssuerPublicKey().Equal(issuerSigner.PublicKey()) {
-		t.Error("Certificate issuer public key doesn't match issuer signer public key")
-	}
+	assert.True(t, cert.PublicKey().Equal(subjectPubKey))
+	assert.True(t, cert.IssuerPublicKey().Equal(issuerSigner.PublicKey()))
+	assert.Equal(t, issuerRef, cert.IssuerReference())
+	assert.NotEmpty(t, cert.Signature())
 
-	// Verify signature
-	if !VerifySignature(cert.IssuerPublicKey(), cert.PublicKey(), cert.Signature()) {
-		t.Error("Certificate signature is invalid")
-	}
+	// 5. Verify Signature using the built-in method
+	assert.True(t, cert.Verify(), "Certificate signature should be valid")
 }
 
-func TestIssueCertificate_NilInputs(t *testing.T) {
-	pubKey, privateKey, err := ed25519.GenerateKey(nil)
-	if err != nil {
-		t.Fatalf("Failed to create key pair: %v", err)
-	}
-	issuerSigner := NewEd25519Signer(pubKey, privateKey)
+func TestVerify_TamperedCertificate(t *testing.T) {
+	_, issuerPrivKey, err := ed25519.GenerateKey(nil)
+	require.NoError(t, err)
+	issuerSigner := NewEd25519Signer(issuerPrivKey, "github:issuer.keys")
+	subjectPubKey, _, err := ed25519.GenerateKey(nil)
+	require.NoError(t, err)
+	const originalIssuerRef = "github:subject-owner.keys"
 
-	_, err = IssueCertificate("test", nil, issuerSigner)
-	if err == nil {
-		t.Error("Expected error for nil subject public key")
-	}
+	cert, err := IssueCertificate(subjectPubKey, issuerSigner, originalIssuerRef)
+	require.NoError(t, err)
+	require.True(t, cert.Verify(), "Freshly issued certificate should be valid")
 
-	// Test with nil issuer
-	subjectPubKey, _, _ := ed25519.GenerateKey(nil)
-	_, err = IssueCertificate("test", subjectPubKey, nil)
-	if err == nil {
-		t.Error("Expected error for nil issuer")
-	}
+	t.Run("Tamper IssuerRef", func(t *testing.T) {
+		tamperedCert := *cert
+		tamperedCert.IssuerRef = "tampered:ref"
+		assert.False(t, tamperedCert.Verify(), "Signature should be invalid after tampering with IssuerRef")
+	})
+
+	t.Run("Tamper SubjectPubKey", func(t *testing.T) {
+		tamperedCert := *cert
+		tamperedPubKey, _, _ := ed25519.GenerateKey(nil)
+		tamperedCert.PubKey = tamperedPubKey
+		assert.False(t, tamperedCert.Verify(), "Signature should be invalid after tampering with SubjectPubKey")
+	})
+
+	t.Run("Tamper IssuerPubKey", func(t *testing.T) {
+		tamperedCert := *cert
+		tamperedIssuerKey, _, _ := ed25519.GenerateKey(nil)
+		tamperedCert.IssuerPubKey = tamperedIssuerKey
+		assert.False(t, tamperedCert.Verify(), "Signature should be invalid after tampering with IssuerPubKey")
+	})
 }
 
-func TestCreateRootCertificate(t *testing.T) {
-	pubKey, privateKey, err := ed25519.GenerateKey(nil)
-	if err != nil {
-		t.Fatalf("Failed to create key pair: %v", err)
-	}
-	rootSigner := NewEd25519Signer(pubKey, privateKey)
+func TestVerify_NilFields(t *testing.T) {
+	cert := &SimpleCertificate{}
+	assert.False(t, cert.Verify(), "Verification should fail safely with nil fields")
 
-	// Create root certificate
-	rootCert, err := CreateRootCertificate("test", rootSigner)
-	if err != nil {
-		t.Fatalf("Failed to create root certificate: %v", err)
-	}
+	_, issuerPrivKey, err := ed25519.GenerateKey(nil)
+	require.NoError(t, err)
+	issuerSigner := NewEd25519Signer(issuerPrivKey, "ref")
+	subjectPubKey, _, err := ed25519.GenerateKey(nil)
+	require.NoError(t, err)
 
-	// Verify root certificate is self-signed
-	if !rootCert.PublicKey().Equal(rootSigner.PublicKey()) {
-		t.Error("Root certificate public key doesn't match signer public key")
-	}
-	if !rootCert.IssuerPublicKey().Equal(rootSigner.PublicKey()) {
-		t.Error("Root certificate issuer public key doesn't match signer public key")
-	}
+	cert, err = IssueCertificate(subjectPubKey, issuerSigner, "ref")
+	require.NoError(t, err)
 
-	// Verify signature
-	if !VerifySignature(rootCert.IssuerPublicKey(), rootCert.PublicKey(), rootCert.Signature()) {
-		t.Error("Root certificate signature is invalid")
-	}
-}
-
-func TestCreateRootCertificate_NilSigner(t *testing.T) {
-	_, err := CreateRootCertificate("test", nil)
-	if err == nil {
-		t.Error("Expected error for nil root signer")
-	}
-}
-
-func TestSimpleCertificate_JSONFormat(t *testing.T) {
-	pubKey, privKey, err := ed25519.GenerateKey(nil)
-	if err != nil {
-		t.Fatalf("Failed to generate key pair: %v", err)
-	}
-
-	issuerPubKey, _, err := ed25519.GenerateKey(nil)
-	if err != nil {
-		t.Fatalf("Failed to generate issuer key pair: %v", err)
-	}
-
-	signature := ed25519.Sign(privKey, pubKey)
-	cert := NewSimpleCertificate("test", pubKey, issuerPubKey, signature)
-
-	jsonData, err := json.Marshal(cert)
-	if err != nil {
-		t.Fatalf("Failed to marshal certificate: %v", err)
-	}
-
-	// Parse the JSON to verify format
-	var jsonStruct struct {
-		PublicKey       string `json:"publicKey"`
-		Signature       string `json:"signature"`
-		IssuerPublicKey string `json:"issuerPublicKey"`
-	}
-
-	err = json.Unmarshal(jsonData, &jsonStruct)
-	if err != nil {
-		t.Fatalf("Failed to parse JSON: %v", err)
-	}
-
-	// Verify hex encoding
-	expectedPubKey := hex.EncodeToString(pubKey)
-	expectedIssuerPubKey := hex.EncodeToString(issuerPubKey)
-	expectedSignature := hex.EncodeToString(signature)
-
-	if jsonStruct.PublicKey != expectedPubKey {
-		t.Error("Public key hex encoding mismatch")
-	}
-	if jsonStruct.IssuerPublicKey != expectedIssuerPubKey {
-		t.Error("Issuer public key hex encoding mismatch")
-	}
-	if jsonStruct.Signature != expectedSignature {
-		t.Error("Signature hex encoding mismatch")
-	}
+	cert.Sig = []byte{}
+	assert.False(t, cert.Verify(), "Verification should fail with nil signature")
 }
