@@ -241,3 +241,69 @@ func TestVerifyCmd_WithCorruptedManifest(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "HMAC")
 }
+
+func TestVerifyCmd_WithSmallFileTree_WhenSigned_mustVerifySignature(t *testing.T) {
+	tempDir := CreateSampleStructureFromMap(t, map[string]string{
+		"a.txt": "a",
+	})
+	tempDir2 := t.TempDir()
+	privateKeyPath := filepath.Join(tempDir2, "key.pem")
+	_, err := certification.GenerateAndWritePrivateKey(privateKeyPath)
+	assert.NoError(t, err)
+	signer, err := certification.NewEd25519SignerFromFile(privateKeyPath, "test")
+	require.NoError(t, err)
+
+	sc := scanner.New()
+	gen := generator.New(sc, signer)
+	err = gen.Generate(context.Background(), tempDir)
+	require.NoError(t, err)
+
+	cmd := NewVerifyCommand()
+	output, err := ExecuteCommandWithCapture(t, cmd, []string{tempDir})
+
+	require.NoError(t, err)
+	assert.Contains(t, output, "verified 1 manifest(s) (0 skipped)")
+}
+
+func TestVerifyCmd_WithLargeFileTree_WhenSigned_mustVerifySignature(t *testing.T) {
+	tempDir := CreateSampleStructureFromMap(t, map[string]string{
+		"level1/level2a/file1.txt":                "content1",
+		"level1/level2a/file2.log":                "log data",
+		"level1/level2b/another.txt":              "more text",
+		"level1/level2b/level3a/config.json":      "{\"key\":\"value\"}",
+		"level1/level2b/level3a/data.bin":         "binary data",
+		"level1/level2c/empty_dir/":               "", // This will create an empty directory
+		"level1/file_in_level1.txt":               "level1 file",
+		"another_root/file.txt":                   "sibling to level1",
+		"z_last_dir/a_file.txt":                   "z",
+		"z_last_dir/x_file.txt":                   "x",
+		"z_last_dir/c_file.txt":                   "y",
+		"z_last_dir/b_file.txt":                   "b",
+		"z_last_dir/e_file.txt":                   "y",
+		"z_last_dir/sub/another.txt":              "x",
+		"a_first_dir/z_file.txt":                  "a",
+		"a_first_dir/y_file.txt":                  "b",
+		"a_first_dir/sub/first_sub_file.txt":      "c",
+		"a_first_dir/sub/level4/deep_file.txt":    "very deep",
+		"a_first_dir/sub/level4/another_deep.txt": "so deep",
+		"file_at_root.txt":                        "root",
+		"another_file_at_root.log":                "root log",
+	})
+
+	privateKeyPath := filepath.Join(tempDir, "key.pem")
+	_, err := certification.GenerateAndWritePrivateKey(privateKeyPath)
+	assert.NoError(t, err)
+	signer, err := certification.NewEd25519SignerFromFile(privateKeyPath, "test")
+	require.NoError(t, err)
+
+	sc := scanner.New()
+	gen := generator.New(sc, signer)
+	err = gen.Generate(context.Background(), tempDir)
+	require.NoError(t, err)
+
+	cmd := NewVerifyCommand()
+	output, err := ExecuteCommandWithCapture(t, cmd, []string{tempDir})
+
+	require.NoError(t, err)
+	assert.Contains(t, output, "verified 12 manifest(s) (0 skipped)")
+}

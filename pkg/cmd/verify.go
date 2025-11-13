@@ -34,7 +34,8 @@ the current state of the files in each directory.`,
 			}
 
 			sc := scanner.New(scannerOpts...)
-			verifier := verify.New(sc)
+			manifestAuditor := verify.NewSimpleManifestAuditor()
+			verifier := verify.New(sc, manifestAuditor)
 			pm := ui.NewProgressMonitor(3 * time.Second)
 			pm.MonitorInBackground(cmd.Context(), cmd.OutOrStdout(), progressCh)
 			result, err := verifier.Verify(cmd.Context(), targetDir)
