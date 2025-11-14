@@ -1,28 +1,44 @@
-package verify
+package verifier
 
 import (
 	"fmt"
 	"github.com/tomekjarosik/bytecheck/pkg/certification"
 	"github.com/tomekjarosik/bytecheck/pkg/manifest"
+	"github.com/tomekjarosik/bytecheck/pkg/trust"
 )
 
 type ManifestAuditor interface {
 	Verify(m *manifest.Manifest) AuditResult
+	GetIssuers() []trust.Issuer
 }
 
-// ManifestAuditor verifies the auditor's signature and certificate on a manifest.
+// SimpleManifestAuditor verifies the auditor's signature and certificate on a manifest.
+// It also collects all unique issuer references from the certificates it successfully verifies.
 type SimpleManifestAuditor struct {
+	trustedIssuers map[string]trust.Issuer
 }
 
-// NewManifestAuditor creates a new ManifestAuditor.
+// NewSimpleManifestAuditor creates a new ManifestAuditor.
 func NewSimpleManifestAuditor() *SimpleManifestAuditor {
-	return &SimpleManifestAuditor{}
+	return &SimpleManifestAuditor{
+		trustedIssuers: make(map[string]trust.Issuer),
+	}
 }
 
 // AuditResult holds the results of an audit verification.
 type AuditResult struct {
 	IsAudited bool
 	Error     error
+}
+
+// GetIssuers returns a slice of all unique issuer references
+// encountered during the verification process so far.
+func (a *SimpleManifestAuditor) GetIssuers() []trust.Issuer {
+	refs := make([]trust.Issuer, 0, len(a.trustedIssuers))
+	for _, val := range a.trustedIssuers {
+		refs = append(refs, val)
+	}
+	return refs
 }
 
 // Verify audits a given manifest, checking its signature and certificate through a two-step process.
@@ -36,8 +52,10 @@ func (a *SimpleManifestAuditor) Verify(m *manifest.Manifest) AuditResult {
 		return AuditResult{IsAudited: true, Error: fmt.Errorf("auditor data present but certificate is missing")}
 	}
 
-	// --- Two-step Verification Process ---
-	cert := certification.NewSimpleCertificate(auditorCert.PublicKey(),
+	// Step 1: Verify the auditor's certificate.
+	// This ensures the certificate itself is valid and has not been tampered with.
+	cert := certification.NewSimpleCertificate(
+		auditorCert.PublicKey(),
 		auditorCert.IssuerPublicKey(),
 		auditorCert.IssuerReference(),
 		auditorCert.Signature())
@@ -45,11 +63,11 @@ func (a *SimpleManifestAuditor) Verify(m *manifest.Manifest) AuditResult {
 	if !cert.Verify() {
 		return AuditResult{IsAudited: true, Error: fmt.Errorf("auditor certificate is invalid: signature from issuer does not match")}
 	}
-
-	// TODO(tjarosik):
-	// At this point, the certificate is cryptographically valid. A complete solution would
-	// also check if the issuer's public key is in a predefined list of trusted keys,
-	// but that is a policy decision outside the scope of this cryptographic check.
+	// Since the certificate is valid, remember the issuer's reference for later validation
+	// against a trusted source (e.g., GitHub keys).
+	a.trustedIssuers[cert.IssuerReference()] = trust.Issuer{
+		Reference: trust.IssuerReference(cert.IssuerReference()),
+		PublicKey: cert.IssuerPublicKey()}
 
 	// Step 2: Verify the manifest's signature.
 	// This signature must be valid when checked against the certificate's public key.

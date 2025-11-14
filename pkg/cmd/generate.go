@@ -10,10 +10,10 @@ import (
 	"time"
 )
 
-func loadCryptoSigner(keyPath *string) (signer certification.Signer, err error) {
+func loadCryptoSigner(keyPath *string, issuerReference string) (signer certification.Signer, err error) {
 	signer = certification.NewFakeSigner()
 	if keyPath != nil && len(*keyPath) > 0 {
-		signer, err = certification.NewEd25519SignerFromFile(*keyPath, "todo")
+		signer, err = certification.NewEd25519SignerFromFile(*keyPath, issuerReference)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create signer from file: %w", err)
 		}
@@ -45,7 +45,7 @@ recalculating directories where the manifest is newer than the freshness interva
 			if freshnessInterval > 0 {
 				scannerOpts = append(scannerOpts, scanner.WithManifestFreshnessLimit(freshnessInterval))
 			}
-			signer, err := loadCryptoSigner(privateKeyPath)
+			signer, err := loadCryptoSigner(privateKeyPath, "github:tomekjarosik")
 			if err != nil {
 				return err
 			}

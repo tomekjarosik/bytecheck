@@ -28,14 +28,12 @@ type Certificate interface {
 
 // SimpleCertificate implements Certificate interface
 type SimpleCertificate struct {
-	CertName     string            `json:"-"`
 	PubKey       ed25519.PublicKey `json:"-"`
 	Sig          []byte            `json:"-"`
 	IssuerPubKey ed25519.PublicKey `json:"-"`
 	IssuerRef    string            `json:"-"`
 }
 
-func (c *SimpleCertificate) Name() string                       { return c.CertName }
 func (c *SimpleCertificate) PublicKey() ed25519.PublicKey       { return c.PubKey }
 func (c *SimpleCertificate) Signature() []byte                  { return c.Sig }
 func (c *SimpleCertificate) IssuerPublicKey() ed25519.PublicKey { return c.IssuerPubKey }
@@ -43,7 +41,6 @@ func (c *SimpleCertificate) IssuerReference() string            { return c.Issue
 
 // CertificateData is the JSON-serializable representation
 type CertificateData struct {
-	Name            string `json:"name"`
 	PublicKey       string `json:"publicKey"`
 	Signature       string `json:"signature"`
 	IssuerPublicKey string `json:"issuerPublicKey"`

@@ -8,14 +8,40 @@ import (
 	"path/filepath"
 )
 
+// Certificate defines the interface for any certificate structure.
+// This decouples verification logic from the concrete cert implementation.
+type Certificate interface {
+
+	// PublicKey returns the public key of the certificate's subject.
+	PublicKey() ed25519.PublicKey
+
+	// Signature returns the signature from the issuer.
+	Signature() []byte
+
+	// IssuerPublicKey returns the public key of the certificate's issuer.
+	IssuerPublicKey() ed25519.PublicKey
+
+	// IssuerReference return a string describing an issuer which can be validated externally (e.g. github keys)
+	IssuerReference() string
+
+	Verify() bool
+}
+
+type Signer interface {
+	Sign(data []byte) ([]byte, error)
+	PublicKey() ed25519.PublicKey
+	Reference() string
+	Close() error
+}
+
 type ManifestProcessor interface {
 	Process(dirPath string, m *manifest.Manifest, manifestName string) error
 }
 
 // SignedProcessor handles manifests with cryptographic signatures
 type SignedProcessor struct {
-	certificate        certification.Certificate
-	signer             certification.Signer
+	certificate        Certificate
+	signer             Signer
 	manifestsGenerated *[]string
 }
 
@@ -25,13 +51,13 @@ type UnsignedProcessor struct {
 }
 
 // NewSignedProcessor creates a processor that signs manifests
-func NewSignedProcessor(rootSigner certification.Signer, manifestsGenerated *[]string) (*SignedProcessor, error) {
+func NewSignedProcessor(rootSigner Signer, manifestsGenerated *[]string) (*SignedProcessor, error) {
 	pubKey, privKey, err := ed25519.GenerateKey(nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate ephemeral signing key: %w", err)
 	}
 
-	cert, err := certification.IssueCertificate(pubKey, rootSigner, "todo")
+	cert, err := certification.IssueCertificate(pubKey, rootSigner)
 	if err != nil {
 		return nil, fmt.Errorf("failed to issue auditor certificate: %w", err)
 	}

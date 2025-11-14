@@ -1,13 +1,14 @@
 package cmd
 
 import (
+	"github.com/tomekjarosik/bytecheck/pkg/trust"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/tomekjarosik/bytecheck/pkg/scanner"
 	"github.com/tomekjarosik/bytecheck/pkg/ui"
-	"github.com/tomekjarosik/bytecheck/pkg/verify"
+	"github.com/tomekjarosik/bytecheck/pkg/verifier"
 )
 
 func NewVerifyCommand() *cobra.Command {
@@ -34,8 +35,9 @@ the current state of the files in each directory.`,
 			}
 
 			sc := scanner.New(scannerOpts...)
-			manifestAuditor := verify.NewSimpleManifestAuditor()
-			verifier := verify.New(sc, manifestAuditor)
+			manifestAuditor := verifier.NewSimpleManifestAuditor()
+			trustVerifier := trust.NewMultiSourceVerifier(trust.NewGitHubIssuerVerifier())
+			verifier := verifier.New(sc, manifestAuditor, trustVerifier)
 			pm := ui.NewProgressMonitor(3 * time.Second)
 			pm.MonitorInBackground(cmd.Context(), cmd.OutOrStdout(), progressCh)
 			result, err := verifier.Verify(cmd.Context(), targetDir)
@@ -45,24 +47,9 @@ the current state of the files in each directory.`,
 				return err
 			}
 
-			// Convert verify.Result to ui.VerificationResult
-			uiFailures := make([]ui.VerificationFailure, len(result.Failures))
-			for i, failure := range result.Failures {
-				uiFailures[i] = ui.VerificationFailure{
-					Path:        failure.Path,
-					Differences: failure.Differences,
-				}
-			}
-
-			uiResult := ui.ConvertVerificationResult(
-				result.ManifestsFound,
-				result.ManifestsVerified,
-				result.ManifestSkipped,
-				result.AllValid,
-				uiFailures,
-			)
 			pm.PrintFinalLine(cmd.OutOrStdout(), result.Stats) // final progress line
-			ui.PrintVerificationResult(cmd.OutOrStdout(), uiResult)
+			ui.PrintVerificationResult(cmd.OutOrStdout(), result)
+
 			return nil
 		},
 	}
