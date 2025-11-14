@@ -9,6 +9,7 @@ import (
 	"github.com/tomekjarosik/bytecheck/pkg/manifest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -160,6 +161,9 @@ func TestGenerateCmd_EmptyDirectory(t *testing.T) {
 func TestGenerateCmd_PermissionDenied(t *testing.T) {
 	if os.Getuid() == 0 {
 		t.Skip("Skipping permission test when running as root")
+	}
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping this test on Windows")
 	}
 
 	tempDir := t.TempDir()
