@@ -5,7 +5,8 @@ A powerful file integrity verification tool that generates cryptographically sig
 ## Features
 
 - **Recursive manifest generation** - Creates integrity manifests for directory trees
-- **Cryptographic verification** - Uses HMAC for tamper-proof manifests
+- **Data corruption checks** - Uses HMAC for tamper-proof manifests
+- **Cryptographic audits** - Supports signing with ed25519 and verification of signatures using Github's keys [ADVANCED.md]
 - **Incremental processing** - Skip recently processed directories with freshness intervals
 - **Cross-platform compatibility** - Works on any system where Go runs
 - **Progress monitoring** - Real-time feedback during operations
