@@ -47,7 +47,7 @@ func TestNewEd25519SignerFromFile(t *testing.T) {
 	keyFile := filepath.Join(t.TempDir(), "test_key")
 	reference := "file-key-reference"
 
-	privateKey, err := GenerateAndWritePrivateKey(keyFile)
+	privateKey, _, err := GenerateKeyPair(keyFile, keyFile+".pub")
 	require.NoError(t, err)
 
 	signer, err := NewEd25519SignerFromFile(keyFile, reference)

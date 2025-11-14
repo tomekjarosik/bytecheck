@@ -108,29 +108,51 @@ func (r *Ed25519KeyReader) GetPublicKeyFromPrivate(privateKey ed25519.PrivateKey
 	return privateKey.Public().(ed25519.PublicKey)
 }
 
-// GenerateAndWritePrivateKey generates a new ed25519 private key and writes it to a file
-// in SSH format. The file will be created with permissions 0600.
-// The generated private key is returned.
-func GenerateAndWritePrivateKey(filePath string) (ed25519.PrivateKey, error) {
+// GenerateKeyPair generates a new ed25519 key pair and writes both private and public keys
+// to files in SSH format. The private key file is created with permissions 0600 (read/write
+// for owner only) and the public key file with permissions 0644 (read/write for owner, read for others).
+// Returns the generated private key and public key, or an error if any step fails.
+func GenerateKeyPair(privateKeyPath, publicKeyPath string) (ed25519.PrivateKey, ssh.PublicKey, error) {
+	// Generate the key pair
 	_, privateKey, err := ed25519.GenerateKey(nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate ed25519 key pair: %w", err)
+		return nil, nil, fmt.Errorf("failed to generate ed25519 key pair: %w", err)
 	}
+
+	// Generate the public key from the private key
+	publicKey, err := ssh.NewPublicKey(privateKey.Public())
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to generate public key: %w", err)
+	}
+
+	// Write private key file
 	pemBlock, err := ssh.MarshalPrivateKey(privateKey, "")
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal private key: %w", err)
+		return nil, nil, fmt.Errorf("failed to marshal private key: %w", err)
 	}
-	// Create the file with 0600 permissions (read/write for owner only).
-	// os.O_TRUNC ensures that if the file already exists, it will be truncated.
-	file, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+
+	privateFile, err := os.OpenFile(privateKeyPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open file for writing: %w", err)
+		return nil, nil, fmt.Errorf("failed to open private key file for writing: %w", err)
 	}
-	defer file.Close()
+	defer privateFile.Close()
 
-	if err := pem.Encode(file, pemBlock); err != nil {
-		return nil, fmt.Errorf("failed to write PEM data to file: %w", err)
+	if err := pem.Encode(privateFile, pemBlock); err != nil {
+		return nil, nil, fmt.Errorf("failed to write private key PEM data to file: %w", err)
 	}
 
-	return privateKey, nil
+	// Write public key file
+	publicKeyBytes := ssh.MarshalAuthorizedKey(publicKey)
+
+	publicFile, err := os.OpenFile(publicKeyPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to open public key file for writing: %w", err)
+	}
+	defer publicFile.Close()
+
+	if _, err := publicFile.Write(publicKeyBytes); err != nil {
+		return nil, nil, fmt.Errorf("failed to write public key to file: %w", err)
+	}
+
+	return privateKey, publicKey, nil
 }

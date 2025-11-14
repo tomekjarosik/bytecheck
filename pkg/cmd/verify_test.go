@@ -248,8 +248,8 @@ func TestVerifyCmd_WithSmallFileTree_WhenSigned_mustVerifySignature(t *testing.T
 		"a.txt": "a",
 	})
 	tempDir2 := t.TempDir()
-	privateKeyPath := filepath.Join(tempDir2, "key.pem")
-	_, err := certification.GenerateAndWritePrivateKey(privateKeyPath)
+	privateKeyPath := filepath.Join(tempDir2, "key")
+	_, _, err := certification.GenerateKeyPair(privateKeyPath, privateKeyPath+".pub")
 	assert.NoError(t, err)
 	signer, err := certification.NewEd25519SignerFromFile(privateKeyPath, "test")
 	require.NoError(t, err)
@@ -292,7 +292,7 @@ func TestVerifyCmd_WithLargeFileTree_WhenSigned_mustVerifySignature(t *testing.T
 	})
 
 	privateKeyPath := filepath.Join(tempDir, "key.pem")
-	_, err := certification.GenerateAndWritePrivateKey(privateKeyPath)
+	_, _, err := certification.GenerateKeyPair(privateKeyPath, privateKeyPath+".pub")
 	assert.NoError(t, err)
 	signer, err := certification.NewEd25519SignerFromFile(privateKeyPath, "test")
 	require.NoError(t, err)
@@ -309,16 +309,16 @@ func TestVerifyCmd_WithLargeFileTree_WhenSigned_mustVerifySignature(t *testing.T
 	assert.Contains(t, output, "verified 12 manifest(s) (0 skipped)")
 }
 
-func TestVerifyCmd_WithMultipleAuditors_UsingMultipleDirectories(t *testing.T) {
+func TestVerifyCmd_WhenSigned_WithMultipleUnsupportedAuditors_mustShowAuditorsAsUnsupported(t *testing.T) {
 	// Create multiple directories, each with their own signer
 	directories := make([]string, 0)
 	signers := []struct {
 		reference string
 		keyName   string
 	}{
-		{"custom:user1", "key1.pem"},
-		{"custom:user2", "key2.pem"},
-		{"corp:team/project", "key3.pem"},
+		{"custom:user1", "user1key"},
+		{"custom:user2", "user2key"},
+		{"corp:team/project", "corpkey3"},
 	}
 
 	tempDir := t.TempDir()
@@ -336,7 +336,7 @@ func TestVerifyCmd_WithMultipleAuditors_UsingMultipleDirectories(t *testing.T) {
 
 		// Generate private key
 		privateKeyPath := filepath.Join(tempDir, signer.keyName)
-		_, err = certification.GenerateAndWritePrivateKey(privateKeyPath)
+		_, _, err = certification.GenerateKeyPair(privateKeyPath, privateKeyPath+".pub")
 		require.NoError(t, err)
 
 		// Create signer with specific reference
@@ -353,8 +353,8 @@ func TestVerifyCmd_WithMultipleAuditors_UsingMultipleDirectories(t *testing.T) {
 	}
 
 	// Generate private key
-	privateKeyPath := filepath.Join(tempDir, "key4.pem")
-	_, err := certification.GenerateAndWritePrivateKey(privateKeyPath)
+	privateKeyPath := filepath.Join(tempDir, "userkey4")
+	_, _, err := certification.GenerateKeyPair(privateKeyPath, privateKeyPath+".pub")
 	require.NoError(t, err)
 
 	// Create signer with specific reference
@@ -372,191 +372,88 @@ func TestVerifyCmd_WithMultipleAuditors_UsingMultipleDirectories(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify all auditors are present
-	assert.Contains(t, output, "Auditors:")
-	assert.Contains(t, output, "github:org1/repo1")
-	assert.Contains(t, output, "github:org2/repo2")
-	assert.Contains(t, output, "corp:team/project")
-	assert.Contains(t, output, "trusted")
+	assert.Contains(t, output, "audited by \u001B[36mcustom:toplevel\u001B[0m \u001B[33m[unsupported]\u001B[0m")
+	assert.Contains(t, output, "audited by \u001B[36mcustom:user1\u001B[0m \u001B[33m[unsupported]\u001B[0m")
+	assert.Contains(t, output, "audited by \u001B[36mcustom:user2\u001B[0m \u001B[33m[unsupported]\u001B[0m")
+	assert.Contains(t, output, "audited by \u001B[36mcorp:team/project\u001B[0m \u001B[33m[unsupported]\u001B[0m")
 
 	// Verify all manifests were processed
-	assert.Contains(t, output, "verified 3 manifest(s)")
+	assert.Contains(t, output, "verified 4 manifest(s)")
 }
 
-func TestVerifyCmd_WithMixedAuditorStatuses_UsingMultipleDirectories(t *testing.T) {
+func TestVerifyCmd_SignedWithAuditor_mustShowCorrectAuditorStatus(t *testing.T) {
 	tempDir := t.TempDir()
 
 	testCases := []struct {
 		name           string
 		reference      string
+		keyPair        string
 		expectedStatus string // "trusted", "unsupported", etc.
+		wrongKey       bool
 	}{
 		{
-			name:           "trusted github",
-			reference:      "github:trusted/repo",
-			expectedStatus: "trusted",
+			name:           "trusted user",
+			reference:      "custom:testuser",
+			keyPair:        "testuser",
+			expectedStatus: "audited by \u001B[36mcustom:testuser\u001B[0m \u001B[32m[trusted]\u001B[0m",
 		},
 		{
 			name:           "unsupported scheme",
 			reference:      "unknown:scheme/path",
+			keyPair:        "testuser",
 			expectedStatus: "unsupported",
 		},
 		{
-			name:           "corp scheme",
-			reference:      "corp:team/a",
-			expectedStatus: "trusted", // Assuming corp: is supported by your verifier
+			name:           "missing key",
+			reference:      "custom:wrong-auditor",
+			keyPair:        "testuser",
+			expectedStatus: "audited by \u001B[36mcustom:wrong-auditor\u001B[0m \u001B[31m[error: could not fetch keys ",
+		},
+		{
+			name:           "trusted user",
+			reference:      "custom:testuser",
+			keyPair:        "testuser",
+			wrongKey:       true,
+			expectedStatus: "audited by \u001B[36mcustom:testuser\u001B[0m \u001B[33m[fishy: one or more public keys for issuer 'custom:testuser' not found in trusted source]",
 		},
 	}
 
 	for i, tc := range testCases {
-		subDir := filepath.Join(tempDir, fmt.Sprintf("dir%d", i))
-		err := os.MkdirAll(subDir, 0755)
-		require.NoError(t, err)
+		t.Run(tc.name, func(t *testing.T) {
+			subDir := filepath.Join(tempDir, fmt.Sprintf("dir%d", i))
+			err := os.MkdirAll(subDir, 0755)
+			require.NoError(t, err)
 
-		CreateSampleStructureFromMapInDir(t, subDir, map[string]string{
-			fmt.Sprintf("file%d.txt", i): fmt.Sprintf("content%d", i),
+			CreateSampleStructureFromMapInDir(t, subDir, map[string]string{
+				fmt.Sprintf("file%d.txt", i): fmt.Sprintf("content%d", i),
+			})
+			privateKeyPath := filepath.Join(tempDir, tc.keyPair)
+			_, _, err = certification.GenerateKeyPair(privateKeyPath, privateKeyPath+".pub")
+			require.NoError(t, err)
+
+			signer, err := certification.NewEd25519SignerFromFile(privateKeyPath, tc.reference)
+			require.NoError(t, err)
+
+			sc := scanner.New()
+			gen := generator.New(sc, signer)
+			err = gen.Generate(context.Background(), subDir)
+			require.NoError(t, err)
+
+			if tc.wrongKey {
+				// overwrite key used to signing
+				privateKeyPath = filepath.Join(tempDir, tc.keyPair)
+				_, _, err = certification.GenerateKeyPair(privateKeyPath, privateKeyPath+".pub")
+				require.NoError(t, err)
+			}
+
+			os.Setenv("BYTECHECK_CUSTOM_AUDITOR_VERIFIER_URL_TEMPLATE", "file://"+tempDir+"/%s.pub")
+			defer os.Unsetenv("BYTECHECK_CUSTOM_AUDITOR_VERIFIER_URL_TEMPLATE")
+			cmd := NewVerifyCommand()
+			output, err := ExecuteCommandWithCapture(t, cmd, []string{subDir})
+			require.NoError(t, err)
+			assert.Contains(t, output, tc.reference)
+			assert.Contains(t, output, tc.expectedStatus)
 		})
 
-		privateKeyPath := filepath.Join(tempDir, fmt.Sprintf("key%d.pem", i))
-		_, err = certification.GenerateAndWritePrivateKey(privateKeyPath)
-		require.NoError(t, err)
-
-		signer, err := certification.NewEd25519SignerFromFile(privateKeyPath, tc.reference)
-		require.NoError(t, err)
-
-		sc := scanner.New()
-		gen := generator.New(sc, signer)
-		err = gen.Generate(context.Background(), subDir)
-		require.NoError(t, err)
 	}
-
-	cmd := NewVerifyCommand()
-	output, err := ExecuteCommandWithCapture(t, cmd, []string{
-		tempDir,
-		"--freshness-duration", "1h",
-	})
-
-	require.NoError(t, err)
-
-	// Verify all references appear
-	for _, tc := range testCases {
-		assert.Contains(t, output, tc.reference)
-	}
-
-	// Verify summary shows mixed statuses
-	assert.Contains(t, output, "Summary:")
-	// This would depend on your actual trust configuration
-}
-
-// Helper function to create sample structure in a specific directory
-func CreateSampleStructureFromMapInDir(t *testing.T, baseDir string, files map[string]string) {
-	for path, content := range files {
-		fullPath := filepath.Join(baseDir, path)
-		err := os.MkdirAll(filepath.Dir(fullPath), 0755)
-		require.NoError(t, err)
-		err = os.WriteFile(fullPath, []byte(content), 0644)
-		require.NoError(t, err)
-	}
-}
-
-func TestVerifyCmd_WithFreshnessLevel_PreservesMultipleSignatures(t *testing.T) {
-	// This test verifies that with appropriate freshness level,
-	// multiple signatures in different directories are all preserved
-	rootDir := t.TempDir()
-
-	// Create 3 directories with different signers
-	for i := 0; i < 3; i++ {
-		subDir := filepath.Join(rootDir, fmt.Sprintf("project%d", i))
-		err := os.MkdirAll(subDir, 0755)
-		require.NoError(t, err)
-
-		CreateSampleStructureFromMapInDir(t, subDir, map[string]string{
-			"main.go": fmt.Sprintf("package main\n\nfunc main() { println(%d) }", i),
-		})
-
-		privateKeyPath := filepath.Join(rootDir, fmt.Sprintf("key%d.pem", i))
-		_, err = certification.GenerateAndWritePrivateKey(privateKeyPath)
-		require.NoError(t, err)
-
-		signer, err := certification.NewEd25519SignerFromFile(privateKeyPath,
-			fmt.Sprintf("github:org%d/repo%d", i, i))
-		require.NoError(t, err)
-
-		sc := scanner.New()
-		gen := generator.New(sc, signer)
-		err = gen.Generate(context.Background(), subDir)
-		require.NoError(t, err)
-	}
-
-	// Verify without freshness level (should still work for multiple dirs)
-	cmd := NewVerifyCommand()
-	output, err := ExecuteCommandWithCapture(t, cmd, []string{rootDir})
-
-	require.NoError(t, err)
-
-	// Should find all 3 manifests
-	assert.Contains(t, output, "verified 3 manifest(s)")
-
-	// Should show all 3 auditors
-	assert.Contains(t, output, "github:org0/repo0")
-	assert.Contains(t, output, "github:org1/repo1")
-	assert.Contains(t, output, "github:org2/repo2")
-}
-
-func TestVerifyCmd_AuditorSummary_WithMultipleDirectories(t *testing.T) {
-	rootDir := t.TempDir()
-
-	// Create directories with different types of auditors
-	auditorTypes := []struct {
-		dirName   string
-		reference string
-	}{
-		{"trusted1", "github:trusted1/repo"},
-		{"trusted2", "github:trusted2/repo"},
-		{"unsupported1", "unknown:scheme1/path"},
-		{"unsupported2", "unknown:scheme2/path"},
-		{"corp", "corp:company/team"},
-	}
-
-	for _, auditor := range auditorTypes {
-		subDir := filepath.Join(rootDir, auditor.dirName)
-		err := os.MkdirAll(subDir, 0755)
-		require.NoError(t, err)
-
-		CreateSampleStructureFromMapInDir(t, subDir, map[string]string{
-			"file.txt": "content",
-		})
-
-		privateKeyPath := filepath.Join(rootDir, fmt.Sprintf("%s_key.pem", auditor.dirName))
-		_, err = certification.GenerateAndWritePrivateKey(privateKeyPath)
-		require.NoError(t, err)
-
-		signer, err := certification.NewEd25519SignerFromFile(privateKeyPath, auditor.reference)
-		require.NoError(t, err)
-
-		sc := scanner.New()
-		gen := generator.New(sc, signer)
-		err = gen.Generate(context.Background(), subDir)
-		require.NoError(t, err)
-	}
-
-	cmd := NewVerifyCommand()
-	output, err := ExecuteCommandWithCapture(t, cmd, []string{
-		rootDir,
-		"--freshness-interval", "24h",
-	})
-
-	require.NoError(t, err)
-
-	// Verify all auditors are listed
-	for _, auditor := range auditorTypes {
-		assert.Contains(t, output, auditor.reference)
-	}
-
-	// The summary should reflect the counts based on your trust configuration
-	assert.Contains(t, output, "Summary:")
-
-	// These exact counts depend on your trust verifier configuration
-	// For example, if github: and corp: are trusted, but unknown: is not:
-	// assert.Contains(t, output, "3 trusted")
-	// assert.Contains(t, output, "2 unsupported")
 }

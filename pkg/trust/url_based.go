@@ -4,7 +4,9 @@ import (
 	"bufio"
 	"crypto/ed25519"
 	"fmt"
+	"io"
 	"net/http"
+	"os"
 	"strings"
 
 	"golang.org/x/crypto/ssh"
@@ -94,6 +96,7 @@ func (v *URLBasedVerifier) Verify(issuers []Issuer) map[IssuerReference]IssuerSt
 }
 
 // fetchPublicKeys retrieves and parses public keys from the configured URL template.
+// Supports both HTTP URLs and file URLs.
 func (v *URLBasedVerifier) fetchPublicKeys(reference IssuerReference) (map[string]struct{}, error) {
 	identifier := strings.TrimPrefix(string(reference), v.scheme)
 	if identifier == "" {
@@ -101,18 +104,41 @@ func (v *URLBasedVerifier) fetchPublicKeys(reference IssuerReference) (map[strin
 	}
 
 	url := fmt.Sprintf(v.urlTemplate, identifier)
-	resp, err := v.client.Get(url)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch URL %s: %w", url, err)
-	}
-	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to fetch URL %s: received status %s", url, resp.Status)
-	}
+	var reader io.Reader
+	var closeFunc func() error
 
-	// Parse the keys from the response body.
-	scanner := bufio.NewScanner(resp.Body)
+	if strings.HasPrefix(url, "file://") {
+		// Handle file URL
+		filePath := strings.TrimPrefix(url, "file://")
+		file, err := os.Open(filePath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open file %s: %w", filePath, err)
+		}
+		reader = file
+		closeFunc = file.Close
+	} else {
+		// Handle HTTP URL
+		resp, err := v.client.Get(url)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch URL %s: %w", url, err)
+		}
+		reader = resp.Body
+		closeFunc = resp.Body.Close
+
+		if resp.StatusCode != http.StatusOK {
+			closeFunc()
+			return nil, fmt.Errorf("failed to fetch URL %s: received status %s", url, resp.Status)
+		}
+	}
+	defer closeFunc()
+
+	return v.parsePublicKeys(reader)
+}
+
+// parsePublicKeys parses public keys from a reader containing SSH authorized keys format
+func (v *URLBasedVerifier) parsePublicKeys(reader io.Reader) (map[string]struct{}, error) {
+	scanner := bufio.NewScanner(reader)
 	keySet := make(map[string]struct{})
 	for scanner.Scan() {
 		pk, _, _, _, err := ssh.ParseAuthorizedKey(scanner.Bytes())

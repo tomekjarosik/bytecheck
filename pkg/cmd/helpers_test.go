@@ -207,3 +207,14 @@ func CreateSampleStructureFromMap(t *testing.T, files map[string]string) string 
 
 	return CreateSampleStructure(t, structure)
 }
+
+// Helper function to create sample structure in a specific directory
+func CreateSampleStructureFromMapInDir(t *testing.T, baseDir string, files map[string]string) {
+	for path, content := range files {
+		fullPath := filepath.Join(baseDir, path)
+		err := os.MkdirAll(filepath.Dir(fullPath), 0755)
+		require.NoError(t, err)
+		err = os.WriteFile(fullPath, []byte(content), 0644)
+		require.NoError(t, err)
+	}
+}

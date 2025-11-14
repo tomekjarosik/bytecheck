@@ -36,11 +36,13 @@ the current state of the files in each directory.`,
 
 			sc := scanner.New(scannerOpts...)
 			manifestAuditor := verifier.NewSimpleManifestAuditor()
-			trustVerifier := trust.NewMultiSourceVerifier(trust.NewGitHubIssuerVerifier())
-			verifier := verifier.New(sc, manifestAuditor, trustVerifier)
+			auditorVerifier := trust.NewMultiSourceVerifier(
+				trust.NewGitHubIssuerVerifier(),
+				trust.NewCustomURLVerifier())
+			vr := verifier.New(sc, manifestAuditor, auditorVerifier)
 			pm := ui.NewProgressMonitor(3 * time.Second)
 			pm.MonitorInBackground(cmd.Context(), cmd.OutOrStdout(), progressCh)
-			result, err := verifier.Verify(cmd.Context(), targetDir)
+			result, err := vr.Verify(cmd.Context(), targetDir)
 			close(progressCh)
 			pm.Wait()
 			if err != nil {

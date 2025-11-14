@@ -32,9 +32,11 @@ func New(opts ...Option) *Scanner {
 // It processes directories in POST-ORDER (children before parents) which is perfect
 // for calculating directory checksums based on manifest files that depend on child manifests.
 func (s *Scanner) Walk(ctx context.Context, root string, walkFn ScannedDirFunc) error {
-	s.stats.Start(ctx, func(stats *Stats) {
+	statsCtx, cancelStats := context.WithCancel(ctx)
+	defer cancelStats()
+	s.stats.Start(statsCtx, func(stats *Stats) {
 		select {
-		case <-ctx.Done():
+		case <-statsCtx.Done():
 			return
 		case s.options.progressChannel <- stats:
 		default: // channel is full, skip
