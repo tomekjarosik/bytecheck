@@ -19,44 +19,27 @@ func TestScannerWalk(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDir)
 
-	// Create test directory structure:
-	// tempDir/
-	// ├── a/
-	// │   ├── a1/
-	// │   │   └── file1.txt
-	// │   ├── a2/
-	// │   │   ├── a2_sub/
-	// │   │   │   └── file4.txt
-	// │   │   └── file2.txt
-	// │   └── file3.txt
-	// ├── b/
-	// │   └── file5.txt
-	// └── root_file.txt
-
+	// Create test directory structure
 	structure := map[string]string{
-		"a/a1/file1.txt":                  "content1",
-		"a/a1/.bytecheck.manifest":        "m1",
-		"a/a2/a2_sub/file4.txt":           "content4",
-		"a/a2/a2_sub/.bytecheck.manifest": "m2",
-		"a/a2/file2.txt":                  "content2",
-		"a/a2/.bytecheck.manifest":        "m3",
-		"a/file3.txt":                     "content3",
-		"a/.bytecheck.manifest":           "m4",
-		"b/file5.txt":                     "content5",
-		"b/.bytecheck.manifest":           "m5",
-		"root_file.txt":                   "root content",
+		filepath.Join("a", "a1", "file1.txt"):                     "content1",
+		filepath.Join("a", "a1", ".bytecheck.manifest"):           "m1",
+		filepath.Join("a", "a2", "a2_sub", "file4.txt"):           "content4",
+		filepath.Join("a", "a2", "a2_sub", ".bytecheck.manifest"): "m2",
+		filepath.Join("a", "a2", "file2.txt"):                     "content2",
+		filepath.Join("a", "a2", ".bytecheck.manifest"):           "m3",
+		filepath.Join("a", "file3.txt"):                           "content3",
+		filepath.Join("a", ".bytecheck.manifest"):                 "m4",
+		filepath.Join("b", "file5.txt"):                           "content5",
+		filepath.Join("b", ".bytecheck.manifest"):                 "m5",
+		"root_file.txt": "root content",
 	}
 
 	// Create the directory structure
 	for filePath, content := range structure {
 		fullPath := filepath.Join(tempDir, filePath)
-
-		// Create parent directories
 		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
 			t.Fatalf("Failed to create directory %s: %v", filepath.Dir(fullPath), err)
 		}
-
-		// Create the file
 		if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
 			t.Fatalf("Failed to create file %s: %v", fullPath, err)
 		}
@@ -77,7 +60,7 @@ func TestScannerWalk(t *testing.T) {
 			return err
 		}
 
-		// Get relative path for easier verification
+		// Get relative path and normalize for consistent comparison
 		relPath, relErr := filepath.Rel(tempDir, dirPath)
 		if relErr != nil {
 			relPath = dirPath
@@ -86,10 +69,12 @@ func TestScannerWalk(t *testing.T) {
 			relPath = "root"
 		}
 
-		processedDirs = append(processedDirs, relPath)
+		// Normalize path separators to forward slashes for consistent testing
+		normalizedPath := filepath.ToSlash(relPath)
+		processedDirs = append(processedDirs, normalizedPath)
 		processedManifests = append(processedManifests, computedManifest)
 
-		// Log what entities were found
+		// Log what entities were found (use original path for logging)
 		t.Logf("Processing directory: %s (cached: %t)", relPath, cached)
 		for _, entity := range computedManifest.Entities {
 			t.Logf("  - %s (isDir: %t, checksum: %s)", entity.Name, entity.IsDir, entity.Checksum[:min(8, len(entity.Checksum))]+"...")
@@ -102,7 +87,7 @@ func TestScannerWalk(t *testing.T) {
 		t.Fatalf("Walk failed: %v", err)
 	}
 
-	// Expected post-order traversal (deepest directories first)
+	// Expected post-order traversal (use forward slashes for consistency)
 	expectedOrder := []string{
 		"a/a1",        // deepest in a branch
 		"a/a2/a2_sub", // deepest in a/a2 branch
