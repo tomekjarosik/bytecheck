@@ -41,14 +41,13 @@ func TestIssueCertificateAndVerify(t *testing.T) {
 	subjectPubKey, _, err := ed25519.GenerateKey(nil)
 	require.NoError(t, err, "Failed to generate subject key pair")
 
-	const issuerRef = "github:subject-owner.keys"
-	cert, err := IssueCertificate(subjectPubKey, issuerSigner, issuerRef)
+	cert, err := IssueCertificate(subjectPubKey, issuerSigner)
 	require.NoError(t, err, "Failed to issue certificate")
 	require.NotNil(t, cert)
 
 	assert.True(t, cert.PublicKey().Equal(subjectPubKey))
 	assert.True(t, cert.IssuerPublicKey().Equal(issuerSigner.PublicKey()))
-	assert.Equal(t, issuerRef, cert.IssuerReference())
+	assert.Equal(t, "github:issuer.keys", cert.IssuerReference())
 	assert.NotEmpty(t, cert.Signature())
 
 	// 5. Verify Signature using the built-in method
@@ -61,9 +60,8 @@ func TestVerify_TamperedCertificate(t *testing.T) {
 	issuerSigner := NewEd25519Signer(issuerPrivKey, "github:issuer.keys")
 	subjectPubKey, _, err := ed25519.GenerateKey(nil)
 	require.NoError(t, err)
-	const originalIssuerRef = "github:subject-owner.keys"
 
-	cert, err := IssueCertificate(subjectPubKey, issuerSigner, originalIssuerRef)
+	cert, err := IssueCertificate(subjectPubKey, issuerSigner)
 	require.NoError(t, err)
 	require.True(t, cert.Verify(), "Freshly issued certificate should be valid")
 
@@ -98,7 +96,7 @@ func TestVerify_NilFields(t *testing.T) {
 	subjectPubKey, _, err := ed25519.GenerateKey(nil)
 	require.NoError(t, err)
 
-	cert, err = IssueCertificate(subjectPubKey, issuerSigner, "ref")
+	cert, err = IssueCertificate(subjectPubKey, issuerSigner)
 	require.NoError(t, err)
 
 	cert.Sig = []byte{}

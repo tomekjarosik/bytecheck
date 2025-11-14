@@ -6,25 +6,6 @@ import (
 	"fmt"
 )
 
-// Certificate defines the interface for any certificate structure.
-// This decouples verification logic from the concrete cert implementation.
-type Certificate interface {
-
-	// PublicKey returns the public key of the certificate's subject.
-	PublicKey() ed25519.PublicKey
-
-	// Signature returns the signature from the issuer.
-	Signature() []byte
-
-	// IssuerPublicKey returns the public key of the certificate's issuer.
-	IssuerPublicKey() ed25519.PublicKey
-
-	// IssuerReference return a string describing an issuer which can be validated externally (e.g. github keys)
-	IssuerReference() string
-
-	Verify() bool
-}
-
 // SimpleCertificate is the concrete implementation of the Certificate interface.
 // This struct holds the actual data and handles JSON marshaling directly.
 type SimpleCertificate struct {
@@ -71,14 +52,14 @@ func (c *SimpleCertificate) dataToSign() []byte {
 
 // IssueCertificate creates a new certificate by signing a subject's public key
 // with an issuer's Signer.
-func IssueCertificate(subjectPublicKey ed25519.PublicKey, issuer Signer, issuerReference string) (*SimpleCertificate, error) {
+func IssueCertificate(subjectPublicKey ed25519.PublicKey, issuer Signer) (*SimpleCertificate, error) {
 	if subjectPublicKey == nil || issuer == nil {
 		return nil, errors.New("subject public key and issuer cannot be nil")
 	}
 
 	cert := &SimpleCertificate{
 		PubKey:       subjectPublicKey,
-		IssuerRef:    issuerReference,
+		IssuerRef:    issuer.Reference(),
 		IssuerPubKey: issuer.PublicKey(),
 	}
 

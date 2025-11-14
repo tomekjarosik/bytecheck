@@ -12,11 +12,15 @@ import (
 )
 
 // Ed25519KeyReader provides functionality to read ed25519 SSH keys
-type Ed25519KeyReader struct{}
+type Ed25519KeyReader struct {
+	reference string
+}
 
 // NewEd25519KeyReader creates a new instance of Ed25519KeyReader
-func NewEd25519KeyReader() *Ed25519KeyReader {
-	return &Ed25519KeyReader{}
+func NewEd25519KeyReader(reference string) *Ed25519KeyReader {
+	return &Ed25519KeyReader{
+		reference: reference,
+	}
 }
 
 // ReadKeyFromFile reads an ed25519 SSH key from a file

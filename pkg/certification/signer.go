@@ -35,7 +35,7 @@ func NewEd25519Signer(privKey ed25519.PrivateKey, reference string) *Ed25519Sign
 // NewEd25519SignerFromFile reads an SSH-formatted ed25519 private key from a file
 // and returns a new Signer. It will prompt for a passphrase if the key is encrypted.
 func NewEd25519SignerFromFile(filePath string, reference string) (*Ed25519Signer, error) {
-	reader := NewEd25519KeyReader()
+	reader := NewEd25519KeyReader(reference)
 
 	privateKey, err := reader.ReadKeyFromFile(filePath)
 	if err != nil {
