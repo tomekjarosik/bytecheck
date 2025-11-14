@@ -10,10 +10,13 @@ import (
 	"time"
 )
 
-func loadCryptoSigner(keyPath *string, issuerReference string) (signer certification.Signer, err error) {
+func loadCryptoSigner(keyPath *string, issuerReference *string) (signer certification.Signer, err error) {
 	signer = certification.NewFakeSigner()
 	if keyPath != nil && len(*keyPath) > 0 {
-		signer, err = certification.NewEd25519SignerFromFile(*keyPath, issuerReference)
+		if issuerReference == nil || len(*issuerReference) == 0 {
+			return nil, fmt.Errorf("issuer reference is required when using private key")
+		}
+		signer, err = certification.NewEd25519SignerFromFile(*keyPath, *issuerReference)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create signer from file: %w", err)
 		}
@@ -24,6 +27,7 @@ func loadCryptoSigner(keyPath *string, issuerReference string) (signer certifica
 func NewGenerateCmd() *cobra.Command {
 	var freshnessInterval time.Duration
 	var privateKeyPath *string
+	var auditorReference *string
 	generateCmd := cobra.Command{
 		Use:   "generate [directory]",
 		Short: "Generate and write manifest files recursively",
@@ -45,7 +49,7 @@ recalculating directories where the manifest is newer than the freshness interva
 			if freshnessInterval > 0 {
 				scannerOpts = append(scannerOpts, scanner.WithManifestFreshnessLimit(freshnessInterval))
 			}
-			signer, err := loadCryptoSigner(privateKeyPath, "github:tomekjarosik")
+			signer, err := loadCryptoSigner(privateKeyPath, auditorReference)
 			if err != nil {
 				return err
 			}
@@ -70,7 +74,10 @@ recalculating directories where the manifest is newer than the freshness interva
 	generateCmd.Flags().DurationVarP(&freshnessInterval, "freshness-interval", "", 0,
 		"Generate will reuse recently generated manifests if they are not older than this interval,"+
 			" (e.g., 5s, 1m, 24h)")
-	privateKeyPath = generateCmd.Flags().StringP("private-key-path", "", "",
+	privateKeyPath = generateCmd.Flags().StringP("private-key", "", "",
 		"Path to ed25519 private key")
+	auditorReference = generateCmd.Flags().StringP("auditor-reference", "", "",
+		"Reference of the auditor (e.g., 'github:<username>' or 'custom:<issuer-name>')."+
+			" Currently only 'github:' and 'custom:' schemes are supported.")
 	return &generateCmd
 }

@@ -2,7 +2,11 @@ package cmd
 
 import (
 	"context"
+	"crypto/ed25519"
+	"encoding/hex"
 	"fmt"
+	"github.com/tomekjarosik/bytecheck/pkg/certification"
+	"github.com/tomekjarosik/bytecheck/pkg/manifest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -242,4 +246,39 @@ func TestGenerateCmd_LargeStructure1(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Contains(t, output, "processed 5 directory(s) (0 cached)")
+}
+
+func TestGenerateCmd_WithDirectoryStructureAndPrivateKeyWithoutIssuerReference_mustReturnError(t *testing.T) {
+
+	tempDir := CreateSampleStructureFromMap(t, map[string]string{
+		"test.txt":       "test content",
+		"subdir/sub.txt": "sub content",
+	})
+
+	cmd := NewGenerateCmd()
+	_, err := ExecuteCommandWithCapture(t, cmd, []string{tempDir, "--private-key", "test.key"})
+	require.Error(t, err)
+	require.ErrorContains(t, err, "issuer reference is required when using private key")
+}
+
+func TestGenerateCmd_WithPrivateKeyAndIssuerReference_mustSignManifestWithAuditorSection(t *testing.T) {
+
+	tempDir := CreateSampleStructureFromMap(t, map[string]string{
+		"test.txt": "test content",
+	})
+	testPrivateKey := filepath.Join(tempDir, "test.key")
+	privateKey, _, err := certification.GenerateKeyPair(testPrivateKey, testPrivateKey+".pub")
+	require.NoError(t, err)
+	publicKey := privateKey.Public().(ed25519.PublicKey)
+	cmd := NewGenerateCmd()
+	output, err := ExecuteCommandWithCapture(t, cmd, []string{tempDir, "--private-key", filepath.Join(tempDir, "test.key"), "--auditor-reference", "github:test-issuer"})
+	require.NoError(t, err)
+
+	assert.Contains(t, output, "processed 1 directory(s) (0 cached)")
+
+	manifestPath := filepath.Join(tempDir, ".bytecheck.manifest")
+	m, err := manifest.LoadManifest(manifestPath)
+	require.NoError(t, err)
+	assert.NotNil(t, m.Auditor)
+	assert.Equal(t, m.Auditor.Certificate.IssuerPublicKey, hex.EncodeToString(publicKey))
 }
