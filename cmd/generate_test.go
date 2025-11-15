@@ -5,8 +5,8 @@ import (
 	"crypto/ed25519"
 	"encoding/hex"
 	"fmt"
-	"github.com/tomekjarosik/bytecheck/pkg/certification"
 	"github.com/tomekjarosik/bytecheck/pkg/manifest"
+	"github.com/tomekjarosik/bytecheck/pkg/signing"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -271,7 +271,7 @@ func TestGenerateCmd_WithPrivateKeyAndIssuerReference_mustSignManifestWithAudito
 		"test.txt": "test content",
 	})
 	testPrivateKey := filepath.Join(tempDir, "test.key")
-	privateKey, _, err := certification.GenerateKeyPair(testPrivateKey, testPrivateKey+".pub")
+	privateKey, _, err := signing.GenerateKeyPair(testPrivateKey, testPrivateKey+".pub")
 	require.NoError(t, err)
 	publicKey := privateKey.Public().(ed25519.PublicKey)
 	cmd := NewGenerateCmd()

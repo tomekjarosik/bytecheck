@@ -3,8 +3,8 @@ package generator
 import (
 	"crypto/ed25519"
 	"fmt"
-	"github.com/tomekjarosik/bytecheck/pkg/certification"
 	"github.com/tomekjarosik/bytecheck/pkg/manifest"
+	"github.com/tomekjarosik/bytecheck/pkg/signing"
 	"path/filepath"
 )
 
@@ -57,12 +57,12 @@ func NewSignedProcessor(rootSigner Signer, manifestsGenerated *[]string) (*Signe
 		return nil, fmt.Errorf("failed to generate ephemeral signing key: %w", err)
 	}
 
-	cert, err := certification.IssueCertificate(pubKey, rootSigner)
+	cert, err := signing.IssueCertificate(pubKey, rootSigner)
 	if err != nil {
 		return nil, fmt.Errorf("failed to issue auditor certificate: %w", err)
 	}
 
-	intermediateSigner := certification.NewEd25519Signer(privKey, "ephemeral")
+	intermediateSigner := signing.NewEd25519Signer(privKey, "ephemeral")
 
 	return &SignedProcessor{
 		certificate:        cert,

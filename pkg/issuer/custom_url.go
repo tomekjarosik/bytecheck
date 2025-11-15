@@ -1,4 +1,4 @@
-package trust
+package issuer
 
 import (
 	"os"
@@ -28,7 +28,7 @@ func NewCustomURLVerifier() *CustomURLVerifier {
 }
 
 // Supports returns true for references that use the "custom:" scheme
-func (v *CustomURLVerifier) Supports(reference IssuerReference) bool {
+func (v *CustomURLVerifier) Supports(reference Reference) bool {
 	if v.URLBasedVerifier == nil {
 		return false
 	}
@@ -36,6 +36,6 @@ func (v *CustomURLVerifier) Supports(reference IssuerReference) bool {
 }
 
 // Verify delegates to the underlying URLBasedVerifier
-func (v *CustomURLVerifier) Verify(issuers []Issuer) map[IssuerReference]IssuerStatus {
+func (v *CustomURLVerifier) Verify(issuers []Issuer) map[Reference]Status {
 	return v.URLBasedVerifier.Verify(issuers)
 }

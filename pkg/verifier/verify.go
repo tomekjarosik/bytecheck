@@ -3,9 +3,9 @@ package verifier
 import (
 	"context"
 	"fmt"
+	"github.com/tomekjarosik/bytecheck/pkg/issuer"
 	"github.com/tomekjarosik/bytecheck/pkg/manifest"
 	"github.com/tomekjarosik/bytecheck/pkg/scanner"
-	"github.com/tomekjarosik/bytecheck/pkg/trust"
 	"path/filepath"
 )
 
@@ -17,7 +17,7 @@ type ManifestVerificationStatus struct {
 	Audited bool
 }
 
-// DirectoryStatus represent verification status of each manifest thus directory
+// DirectoryVerificationStatus DirectoryStatus represent verification status of each manifest thus directory
 type DirectoryVerificationStatus struct {
 	Path           string
 	ManifestStatus ManifestVerificationStatus
@@ -27,7 +27,7 @@ type DirectoryVerificationStatus struct {
 // Result represents the result of a verification operation
 type Result struct {
 	DirectoryStatuses []DirectoryVerificationStatus
-	AuditorStatuses   map[trust.IssuerReference]trust.IssuerStatus
+	AuditorStatuses   map[issuer.Reference]issuer.Status
 	Stats             *scanner.Stats
 }
 
@@ -35,11 +35,11 @@ type Result struct {
 type Verifier struct {
 	scanner       *scanner.Scanner
 	auditor       ManifestAuditor
-	trustVerifier trust.Verifier
+	trustVerifier issuer.Verifier
 }
 
 // New creates a new Verifier instance
-func New(sc *scanner.Scanner, auditor ManifestAuditor, verifier trust.Verifier) *Verifier {
+func New(sc *scanner.Scanner, auditor ManifestAuditor, verifier issuer.Verifier) *Verifier {
 	return &Verifier{
 		scanner:       sc,
 		auditor:       auditor,

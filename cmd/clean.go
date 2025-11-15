@@ -1,12 +1,9 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"github.com/spf13/cobra"
-	"github.com/tomekjarosik/bytecheck/pkg/manifest"
-	"github.com/tomekjarosik/bytecheck/pkg/traverse"
-	"github.com/tomekjarosik/bytecheck/pkg/ui"
+	"io/fs"
 	"os"
 	"path/filepath"
 )
@@ -30,32 +27,42 @@ directory tree. Use with caution.`,
 			count := 0
 			errors := 0
 
-			err := traverse.WalkPostOrder(cmd.Context(), targetDir, func(ctx context.Context, dirPath string, err error) error {
+			// To avoid dependency
+			manifestName := ".bytecheck.manifest"
+
+			// Use filepath.WalkDir for simpler recursive traversal
+			err := filepath.WalkDir(targetDir, func(path string, d fs.DirEntry, err error) error {
 				if err != nil {
 					errors++
-					return nil // Continue processing
+					return nil // Continue despite errors
 				}
-				manifestPath := filepath.Join(dirPath, manifest.DefaultName)
-				if _, statErr := os.Stat(manifestPath); statErr == nil {
-					if removeErr := os.Remove(manifestPath); removeErr != nil {
+
+				// Skip directories, only process files
+				if d.IsDir() {
+					return nil
+				}
+
+				// Check if filename matches our pattern
+				filename := filepath.Base(path)
+				if filename == manifestName {
+					if removeErr := os.Remove(path); removeErr != nil {
+						fmt.Printf("Error removing %s: %v\n", path, removeErr)
 						errors++
-						return nil // Continue processing
+					} else {
+						fmt.Printf("Removed: %s\n", path)
+						count++
 					}
-					count++
 				}
+
 				return nil
 			})
 
 			// Print summary
-			if count == 0 && errors == 0 {
-				ui.PrintWarning("No manifests found to clean")
-			} else if errors == 0 {
-				ui.PrintSuccess("Removed %d manifest%s", count, ui.Pluralize(count, "", "s"))
-			} else {
-				fmt.Printf("%sCOMPLETED WITH ERRORS%s - Removed %d manifest%s, %d error%s\n",
-					ui.ColorYellow, ui.ColorReset, count, ui.Pluralize(count, "", "s"),
-					errors, ui.Pluralize(errors, "", "s"))
+			fmt.Printf("\nSummary: Removed %d file%s", count, pluralize(count))
+			if errors > 0 {
+				fmt.Printf(", %d error%s", errors, pluralize(errors))
 			}
+			fmt.Println()
 
 			if err != nil {
 				return err
@@ -69,4 +76,12 @@ directory tree. Use with caution.`,
 		},
 	}
 	return &cleanCmd
+}
+
+// Simple pluralize helper
+func pluralize(count int) string {
+	if count == 1 {
+		return ""
+	}
+	return "s"
 }

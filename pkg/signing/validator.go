@@ -1,4 +1,4 @@
-package certification
+package signing
 
 import (
 	"crypto/ed25519"
@@ -16,6 +16,6 @@ func (c *SimpleCertificate) Verify() bool {
 	if c.PubKey == nil || c.IssuerPubKey == nil || c.IssuerRef == "" || c.Sig == nil {
 		return false
 	}
-	
+
 	return ed25519.Verify(c.IssuerPublicKey(), c.dataToSign(), c.Signature())
 }

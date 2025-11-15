@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/tomekjarosik/bytecheck/pkg/cmd"
+	"github.com/tomekjarosik/bytecheck/cmd"
 )
 
 func main() {

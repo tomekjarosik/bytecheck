@@ -3,20 +3,20 @@ package cmd
 import (
 	"fmt"
 	"github.com/spf13/cobra"
-	"github.com/tomekjarosik/bytecheck/pkg/certification"
 	"github.com/tomekjarosik/bytecheck/pkg/generator"
 	"github.com/tomekjarosik/bytecheck/pkg/scanner"
+	"github.com/tomekjarosik/bytecheck/pkg/signing"
 	"github.com/tomekjarosik/bytecheck/pkg/ui"
 	"time"
 )
 
-func loadCryptoSigner(keyPath *string, issuerReference *string) (signer certification.Signer, err error) {
-	signer = certification.NewFakeSigner()
+func loadCryptoSigner(keyPath *string, issuerReference *string) (signer signing.Signer, err error) {
+	signer = signing.NewFakeSigner()
 	if keyPath != nil && len(*keyPath) > 0 {
 		if issuerReference == nil || len(*issuerReference) == 0 {
 			return nil, fmt.Errorf("issuer reference is required when using private key")
 		}
-		signer, err = certification.NewEd25519SignerFromFile(*keyPath, *issuerReference)
+		signer, err = signing.NewEd25519SignerFromFile(*keyPath, *issuerReference)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create signer from file: %w", err)
 		}

@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/tomekjarosik/bytecheck/pkg/certification"
 	"github.com/tomekjarosik/bytecheck/pkg/generator"
 	"github.com/tomekjarosik/bytecheck/pkg/scanner"
+	"github.com/tomekjarosik/bytecheck/pkg/signing"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,7 +23,7 @@ func TestVerifyCommand(t *testing.T) {
 
 	// First, generate manifests
 	sc := scanner.New()
-	gen := generator.New(sc, certification.NewFakeSigner())
+	gen := generator.New(sc, signing.NewFakeSigner())
 	ctx := context.Background()
 	err := gen.Generate(ctx, tempDir)
 	if err != nil {
@@ -55,7 +55,7 @@ func TestVerifyCommandWithChangedFiles(t *testing.T) {
 
 	// Generate manifest
 	sc := scanner.New()
-	fakeSigner := certification.NewFakeSigner()
+	fakeSigner := signing.NewFakeSigner()
 	gen := generator.New(sc, fakeSigner)
 	ctx := context.Background()
 	err = gen.Generate(ctx, tempDir)
@@ -120,7 +120,7 @@ func TestVerifyCommandDefaultDirectory(t *testing.T) {
 
 	// Generate manifest
 	sc := scanner.New()
-	fakeSigner := certification.NewFakeSigner()
+	fakeSigner := signing.NewFakeSigner()
 	gen := generator.New(sc, fakeSigner)
 	ctx := context.Background()
 	err = gen.Generate(ctx, ".")
@@ -249,9 +249,9 @@ func TestVerifyCmd_WithSmallFileTree_WhenSigned_mustVerifySignature(t *testing.T
 	})
 	tempDir2 := t.TempDir()
 	privateKeyPath := filepath.Join(tempDir2, "key")
-	_, _, err := certification.GenerateKeyPair(privateKeyPath, privateKeyPath+".pub")
+	_, _, err := signing.GenerateKeyPair(privateKeyPath, privateKeyPath+".pub")
 	assert.NoError(t, err)
-	signer, err := certification.NewEd25519SignerFromFile(privateKeyPath, "test")
+	signer, err := signing.NewEd25519SignerFromFile(privateKeyPath, "test")
 	require.NoError(t, err)
 
 	sc := scanner.New()
@@ -292,9 +292,9 @@ func TestVerifyCmd_WithLargeFileTree_WhenSigned_mustVerifySignature(t *testing.T
 	})
 
 	privateKeyPath := filepath.Join(tempDir, "key.pem")
-	_, _, err := certification.GenerateKeyPair(privateKeyPath, privateKeyPath+".pub")
+	_, _, err := signing.GenerateKeyPair(privateKeyPath, privateKeyPath+".pub")
 	assert.NoError(t, err)
-	signer, err := certification.NewEd25519SignerFromFile(privateKeyPath, "test")
+	signer, err := signing.NewEd25519SignerFromFile(privateKeyPath, "test")
 	require.NoError(t, err)
 
 	sc := scanner.New()
@@ -336,11 +336,11 @@ func TestVerifyCmd_WhenSigned_WithMultipleUnsupportedAuditors_mustShowAuditorsAs
 
 		// Generate private key
 		privateKeyPath := filepath.Join(tempDir, signer.keyName)
-		_, _, err = certification.GenerateKeyPair(privateKeyPath, privateKeyPath+".pub")
+		_, _, err = signing.GenerateKeyPair(privateKeyPath, privateKeyPath+".pub")
 		require.NoError(t, err)
 
 		// Create signer with specific reference
-		signerObj, err := certification.NewEd25519SignerFromFile(privateKeyPath, signer.reference)
+		signerObj, err := signing.NewEd25519SignerFromFile(privateKeyPath, signer.reference)
 		require.NoError(t, err)
 
 		// Generate manifest for this directory
@@ -354,11 +354,11 @@ func TestVerifyCmd_WhenSigned_WithMultipleUnsupportedAuditors_mustShowAuditorsAs
 
 	// Generate private key
 	privateKeyPath := filepath.Join(tempDir, "userkey4")
-	_, _, err := certification.GenerateKeyPair(privateKeyPath, privateKeyPath+".pub")
+	_, _, err := signing.GenerateKeyPair(privateKeyPath, privateKeyPath+".pub")
 	require.NoError(t, err)
 
 	// Create signer with specific reference
-	signerObj, err := certification.NewEd25519SignerFromFile(privateKeyPath, "custom:toplevel")
+	signerObj, err := signing.NewEd25519SignerFromFile(privateKeyPath, "custom:toplevel")
 	require.NoError(t, err)
 
 	sc := scanner.New(scanner.WithManifestFreshnessLimit(time.Hour))
@@ -428,10 +428,10 @@ func TestVerifyCmd_SignedWithAuditor_mustShowCorrectAuditorStatus(t *testing.T) 
 				fmt.Sprintf("file%d.txt", i): fmt.Sprintf("content%d", i),
 			})
 			privateKeyPath := filepath.Join(tempDir, tc.keyPair)
-			_, _, err = certification.GenerateKeyPair(privateKeyPath, privateKeyPath+".pub")
+			_, _, err = signing.GenerateKeyPair(privateKeyPath, privateKeyPath+".pub")
 			require.NoError(t, err)
 
-			signer, err := certification.NewEd25519SignerFromFile(privateKeyPath, tc.reference)
+			signer, err := signing.NewEd25519SignerFromFile(privateKeyPath, tc.reference)
 			require.NoError(t, err)
 
 			sc := scanner.New()
@@ -442,7 +442,7 @@ func TestVerifyCmd_SignedWithAuditor_mustShowCorrectAuditorStatus(t *testing.T) 
 			if tc.wrongKey {
 				// overwrite key used to signing
 				privateKeyPath = filepath.Join(tempDir, tc.keyPair)
-				_, _, err = certification.GenerateKeyPair(privateKeyPath, privateKeyPath+".pub")
+				_, _, err = signing.GenerateKeyPair(privateKeyPath, privateKeyPath+".pub")
 				require.NoError(t, err)
 			}
 

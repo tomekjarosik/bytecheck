@@ -2,7 +2,7 @@ package ui
 
 import (
 	"fmt"
-	"github.com/tomekjarosik/bytecheck/pkg/trust"
+	"github.com/tomekjarosik/bytecheck/pkg/issuer"
 	"github.com/tomekjarosik/bytecheck/pkg/verifier"
 	"io"
 	"strings"
@@ -52,7 +52,7 @@ func PrintVerificationResult(w io.Writer, result *verifier.Result) {
 }
 
 // Enhanced printAuditorStatuses with fishy detection
-func printAuditorStatuses(w io.Writer, auditorStatuses map[trust.IssuerReference]trust.IssuerStatus) {
+func printAuditorStatuses(w io.Writer, auditorStatuses map[issuer.Reference]issuer.Status) {
 	if len(auditorStatuses) == 0 {
 		fmt.Fprintf(w, "\n%sAuditors: none%s\n", ColorYellow, ColorReset)
 		return

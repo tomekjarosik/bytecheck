@@ -1,19 +1,19 @@
-package trust
+package issuer
 
 import (
 	"crypto/ed25519"
 )
 
-type IssuerReference string
+type Reference string
 
 // Issuer represents the combination of a reference string and the public key
 // that was used in a manifest's certificate chain.
 type Issuer struct {
-	Reference IssuerReference
+	Reference Reference
 	PublicKey ed25519.PublicKey
 }
 
-type IssuerStatus struct {
+type Status struct {
 	Issuer
 	Supported bool
 	Error     error
@@ -25,9 +25,9 @@ type Verifier interface {
 	// Verify takes a list of issuers found during manifest auditing and checks
 	// if their public keys are valid according to the trusted source specified
 	// in their reference string.
-	Verify(issuers []Issuer) map[IssuerReference]IssuerStatus
+	Verify(issuers []Issuer) map[Reference]Status
 	// Supports returns true if the verifier can handle the given reference scheme.
-	Supports(reference IssuerReference) bool
+	Supports(reference Reference) bool
 }
 
 // MultiSourceVerifier is a container for multiple Verifier implementations.
@@ -42,10 +42,10 @@ func NewMultiSourceVerifier(verifiers ...Verifier) *MultiSourceVerifier {
 }
 
 // Verify iterates through the issuers and delegates to the appropriate verifier.
-func (v *MultiSourceVerifier) Verify(issuers []Issuer) map[IssuerReference]IssuerStatus {
-	result := make(map[IssuerReference]IssuerStatus)
+func (v *MultiSourceVerifier) Verify(issuers []Issuer) map[Reference]Status {
+	result := make(map[Reference]Status)
 	for _, issuer := range issuers {
-		result[issuer.Reference] = IssuerStatus{Issuer: issuer, Supported: false}
+		result[issuer.Reference] = Status{Issuer: issuer, Supported: false}
 		for _, verifier := range v.verifiers {
 			if verifier.Supports(issuer.Reference) {
 				singleResult := verifier.Verify([]Issuer{issuer})
@@ -57,6 +57,6 @@ func (v *MultiSourceVerifier) Verify(issuers []Issuer) map[IssuerReference]Issue
 	return result
 }
 
-func (v *MultiSourceVerifier) Supports(reference IssuerReference) bool {
+func (v *MultiSourceVerifier) Supports(reference Reference) bool {
 	return true
 }

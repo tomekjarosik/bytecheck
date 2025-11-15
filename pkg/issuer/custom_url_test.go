@@ -1,4 +1,4 @@
-package trust
+package issuer
 
 import (
 	"crypto/ed25519"
@@ -41,7 +41,7 @@ func TestCustomURLVerifier_Supports(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		reference IssuerReference
+		reference Reference
 		expected  bool
 	}{
 		{
@@ -93,13 +93,13 @@ func TestCustomURLVerifier_WithFileURL(t *testing.T) {
 
 	issuers := []Issuer{
 		{
-			Reference: IssuerReference("custom:test-issuer"),
+			Reference: Reference("custom:test-issuer"),
 			PublicKey: publicKey,
 		},
 	}
 
 	results := verifier.Verify(issuers)
-	require.Contains(t, results, IssuerReference("custom:test-issuer"))
+	require.Contains(t, results, Reference("custom:test-issuer"))
 
 	status := results["custom:test-issuer"]
 	assert.True(t, status.Supported)

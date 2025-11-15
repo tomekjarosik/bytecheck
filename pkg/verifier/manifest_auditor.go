@@ -2,26 +2,26 @@ package verifier
 
 import (
 	"fmt"
-	"github.com/tomekjarosik/bytecheck/pkg/certification"
+	"github.com/tomekjarosik/bytecheck/pkg/issuer"
 	"github.com/tomekjarosik/bytecheck/pkg/manifest"
-	"github.com/tomekjarosik/bytecheck/pkg/trust"
+	"github.com/tomekjarosik/bytecheck/pkg/signing"
 )
 
 type ManifestAuditor interface {
 	Verify(m *manifest.Manifest) AuditResult
-	GetIssuers() []trust.Issuer
+	GetIssuers() []issuer.Issuer
 }
 
 // SimpleManifestAuditor verifies the auditor's signature and certificate on a manifest.
 // It also collects all unique issuer references from the certificates it successfully verifies.
 type SimpleManifestAuditor struct {
-	trustedIssuers map[string]trust.Issuer
+	trustedIssuers map[string]issuer.Issuer
 }
 
 // NewSimpleManifestAuditor creates a new ManifestAuditor.
 func NewSimpleManifestAuditor() *SimpleManifestAuditor {
 	return &SimpleManifestAuditor{
-		trustedIssuers: make(map[string]trust.Issuer),
+		trustedIssuers: make(map[string]issuer.Issuer),
 	}
 }
 
@@ -33,8 +33,8 @@ type AuditResult struct {
 
 // GetIssuers returns a slice of all unique issuer references
 // encountered during the verification process so far.
-func (a *SimpleManifestAuditor) GetIssuers() []trust.Issuer {
-	refs := make([]trust.Issuer, 0, len(a.trustedIssuers))
+func (a *SimpleManifestAuditor) GetIssuers() []issuer.Issuer {
+	refs := make([]issuer.Issuer, 0, len(a.trustedIssuers))
 	for _, val := range a.trustedIssuers {
 		refs = append(refs, val)
 	}
@@ -54,7 +54,7 @@ func (a *SimpleManifestAuditor) Verify(m *manifest.Manifest) AuditResult {
 
 	// Step 1: Verify the auditor's certificate.
 	// This ensures the certificate itself is valid and has not been tampered with.
-	cert := certification.NewSimpleCertificate(
+	cert := signing.NewSimpleCertificate(
 		auditorCert.PublicKey(),
 		auditorCert.IssuerPublicKey(),
 		auditorCert.IssuerReference(),
@@ -65,8 +65,8 @@ func (a *SimpleManifestAuditor) Verify(m *manifest.Manifest) AuditResult {
 	}
 	// Since the certificate is valid, remember the issuer's reference for later validation
 	// against a trusted source (e.g., GitHub keys).
-	a.trustedIssuers[cert.IssuerReference()] = trust.Issuer{
-		Reference: trust.IssuerReference(cert.IssuerReference()),
+	a.trustedIssuers[cert.IssuerReference()] = issuer.Issuer{
+		Reference: issuer.Reference(cert.IssuerReference()),
 		PublicKey: cert.IssuerPublicKey()}
 
 	// Step 2: Verify the manifest's signature.
@@ -81,7 +81,7 @@ func (a *SimpleManifestAuditor) Verify(m *manifest.Manifest) AuditResult {
 			Error:     fmt.Errorf("failed to prepare manifest data for signature verification: %w", err),
 		}
 	}
-	if !certification.VerifySignature(cert.PublicKey(), dataToVerify, manifestSignature) {
+	if !signing.VerifySignature(cert.PublicKey(), dataToVerify, manifestSignature) {
 		return AuditResult{
 			IsAudited: true,
 			Error:     fmt.Errorf("manifest signature is invalid"),

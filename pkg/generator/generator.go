@@ -4,16 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/tomekjarosik/bytecheck/pkg/certification"
 	"github.com/tomekjarosik/bytecheck/pkg/manifest"
 	"github.com/tomekjarosik/bytecheck/pkg/scanner"
+	"github.com/tomekjarosik/bytecheck/pkg/signing"
 )
 
 // Generator handles manifest generation with optimization features
 type Generator struct {
 	scanner            *scanner.Scanner
-	signer             certification.Signer
 	progressCh         chan scanner.Stats
+	signer             signing.Signer
 	manifestsGenerated []string
 }
 
@@ -23,7 +23,7 @@ type Stats struct {
 }
 
 // New creates a new Generator instance
-func New(sc *scanner.Scanner, signer certification.Signer) *Generator {
+func New(sc *scanner.Scanner, signer signing.Signer) *Generator {
 	return &Generator{
 		scanner: sc,
 		signer:  signer,
@@ -52,7 +52,7 @@ func (g *Generator) Generate(ctx context.Context, rootPath string) error {
 func (g *Generator) createProcessor() (ManifestProcessor, error) {
 	// Test if signer supports signing
 	_, err := g.signer.Sign([]byte("test"))
-	if errors.Is(err, certification.ErrNotImplemented) {
+	if errors.Is(err, signing.ErrNotImplemented) {
 		return NewUnsignedProcessor(&g.manifestsGenerated), nil
 	}
 	if err != nil {

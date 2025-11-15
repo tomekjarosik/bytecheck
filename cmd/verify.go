@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"github.com/tomekjarosik/bytecheck/pkg/trust"
+	"github.com/tomekjarosik/bytecheck/pkg/issuer"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -36,9 +36,9 @@ the current state of the files in each directory.`,
 
 			sc := scanner.New(scannerOpts...)
 			manifestAuditor := verifier.NewSimpleManifestAuditor()
-			auditorVerifier := trust.NewMultiSourceVerifier(
-				trust.NewGitHubIssuerVerifier(),
-				trust.NewCustomURLVerifier())
+			auditorVerifier := issuer.NewMultiSourceVerifier(
+				issuer.NewGitHubIssuerVerifier(),
+				issuer.NewCustomURLVerifier())
 			vr := verifier.New(sc, manifestAuditor, auditorVerifier)
 			pm := ui.NewProgressMonitor(3 * time.Second)
 			pm.MonitorInBackground(cmd.Context(), cmd.OutOrStdout(), progressCh)

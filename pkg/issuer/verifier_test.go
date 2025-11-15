@@ -1,4 +1,4 @@
-package trust
+package issuer
 
 import (
 	"crypto/ed25519"
@@ -10,23 +10,23 @@ import (
 
 // MockVerifier implements Verifier for testing
 type MockVerifier struct {
-	supportedSchemes map[IssuerReference]bool
-	verifyResults    map[IssuerReference]IssuerStatus
+	supportedSchemes map[Reference]bool
+	verifyResults    map[Reference]Status
 }
 
 func NewMockVerifier() *MockVerifier {
 	return &MockVerifier{
-		supportedSchemes: make(map[IssuerReference]bool),
-		verifyResults:    make(map[IssuerReference]IssuerStatus),
+		supportedSchemes: make(map[Reference]bool),
+		verifyResults:    make(map[Reference]Status),
 	}
 }
 
-func (m *MockVerifier) Supports(reference IssuerReference) bool {
+func (m *MockVerifier) Supports(reference Reference) bool {
 	return m.supportedSchemes[reference]
 }
 
-func (m *MockVerifier) Verify(issuers []Issuer) map[IssuerReference]IssuerStatus {
-	result := make(map[IssuerReference]IssuerStatus)
+func (m *MockVerifier) Verify(issuers []Issuer) map[Reference]Status {
+	result := make(map[Reference]Status)
 	for _, issuer := range issuers {
 		if status, exists := m.verifyResults[issuer.Reference]; exists {
 			result[issuer.Reference] = status
@@ -35,7 +35,7 @@ func (m *MockVerifier) Verify(issuers []Issuer) map[IssuerReference]IssuerStatus
 	return result
 }
 
-func (m *MockVerifier) AddSupportedScheme(scheme IssuerReference, result IssuerStatus) {
+func (m *MockVerifier) AddSupportedScheme(scheme Reference, result Status) {
 	m.supportedSchemes[scheme] = true
 	m.verifyResults[scheme] = result
 }
@@ -45,9 +45,9 @@ var (
 	validPublicKey   = ed25519.PublicKey("valid-public-key-12345")
 	invalidPublicKey = ed25519.PublicKey("invalid-public-key-67890")
 
-	testReference1 = IssuerReference("github:testuser")
-	testReference2 = IssuerReference("corp://keyserver/team")
-	testReference3 = IssuerReference("unknown://scheme/test")
+	testReference1 = Reference("github:testuser")
+	testReference2 = Reference("corp://keyserver/team")
+	testReference3 = Reference("unknown://scheme/test")
 
 	testIssuer1 = Issuer{Reference: testReference1, PublicKey: validPublicKey}
 	testIssuer2 = Issuer{Reference: testReference2, PublicKey: validPublicKey}
@@ -94,7 +94,7 @@ func TestMultiSourceVerifier_Verify_WithSupportingVerifier(t *testing.T) {
 	corpVerifier := NewMockVerifier()
 
 	// Set up github verifier to support testReference1
-	expectedStatus1 := IssuerStatus{
+	expectedStatus1 := Status{
 		Issuer:    testIssuer1,
 		Supported: true,
 		Error:     nil,
@@ -102,7 +102,7 @@ func TestMultiSourceVerifier_Verify_WithSupportingVerifier(t *testing.T) {
 	githubVerifier.AddSupportedScheme(testReference1, expectedStatus1)
 
 	// Set up corp verifier to support testReference2
-	expectedStatus2 := IssuerStatus{
+	expectedStatus2 := Status{
 		Issuer:    testIssuer2,
 		Supported: true,
 		Error:     errors.New("key expired"),
@@ -139,12 +139,12 @@ func TestMultiSourceVerifier_Verify_OrderMatters(t *testing.T) {
 	verifier2 := NewMockVerifier()
 
 	// Both support testReference1 but return different results
-	status1 := IssuerStatus{
+	status1 := Status{
 		Issuer:    testIssuer1,
 		Supported: true,
 		Error:     nil,
 	}
-	status2 := IssuerStatus{
+	status2 := Status{
 		Issuer:    testIssuer1,
 		Supported: false,
 		Error:     errors.New("rejected by second verifier"),
@@ -222,12 +222,12 @@ func TestMultiSourceVerifier_Supports(t *testing.T) {
 func TestIssuerStatus_String(t *testing.T) {
 	tests := []struct {
 		name     string
-		status   IssuerStatus
+		status   Status
 		expected string
 	}{
 		{
 			name: "supported no error",
-			status: IssuerStatus{
+			status: Status{
 				Issuer:    testIssuer1,
 				Supported: true,
 				Error:     nil,
@@ -236,7 +236,7 @@ func TestIssuerStatus_String(t *testing.T) {
 		},
 		{
 			name: "supported with error",
-			status: IssuerStatus{
+			status: Status{
 				Issuer:    testIssuer2,
 				Supported: true,
 				Error:     errors.New("validation failed"),
@@ -245,7 +245,7 @@ func TestIssuerStatus_String(t *testing.T) {
 		},
 		{
 			name: "unsupported",
-			status: IssuerStatus{
+			status: Status{
 				Issuer:    testIssuer3,
 				Supported: false,
 				Error:     nil,
@@ -265,7 +265,7 @@ func TestIssuerStatus_String(t *testing.T) {
 }
 
 // Test helper function for String() method
-func (is IssuerStatus) String() string {
+func (is Status) String() string {
 	status := "unsupported"
 	if is.Supported {
 		status = "supported"

@@ -1,4 +1,4 @@
-package trust
+package issuer
 
 import (
 	"crypto/ed25519"
@@ -17,7 +17,7 @@ func TestURLBasedVerifier_Supports(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		reference IssuerReference
+		reference Reference
 		expected  bool
 	}{
 		{
@@ -74,15 +74,15 @@ func TestURLBasedVerifier_Verify_Success(t *testing.T) {
 
 	issuers := []Issuer{
 		{
-			Reference: IssuerReference("test:valid-issuer"),
+			Reference: Reference("test:valid-issuer"),
 			PublicKey: publicKey1,
 		},
 		{
-			Reference: IssuerReference("test:valid-issuer"),
+			Reference: Reference("test:valid-issuer"),
 			PublicKey: publicKey2,
 		},
 		{
-			Reference: IssuerReference("unknown:scheme"),
+			Reference: Reference("unknown:scheme"),
 			PublicKey: publicKey1,
 		},
 	}
@@ -90,17 +90,17 @@ func TestURLBasedVerifier_Verify_Success(t *testing.T) {
 	results := verifier.Verify(issuers)
 
 	// Verify results
-	require.Contains(t, results, IssuerReference("test:valid-issuer"))
-	require.Contains(t, results, IssuerReference("unknown:scheme"))
+	require.Contains(t, results, Reference("test:valid-issuer"))
+	require.Contains(t, results, Reference("unknown:scheme"))
 
 	// Check successful verification
-	status := results[IssuerReference("test:valid-issuer")]
+	status := results[Reference("test:valid-issuer")]
 	assert.True(t, status.Supported)
 	assert.NoError(t, status.Error)
 	assert.Equal(t, issuers[0].Reference, status.Issuer.Reference)
 
 	// Check unsupported scheme
-	status = results[IssuerReference("unknown:scheme")]
+	status = results[Reference("unknown:scheme")]
 	assert.False(t, status.Supported)
 	assert.NoError(t, status.Error)
 }
@@ -126,7 +126,7 @@ func TestURLBasedVerifier_Verify_KeyNotFound(t *testing.T) {
 
 	issuers := []Issuer{
 		{
-			Reference: IssuerReference("test:issuer"),
+			Reference: Reference("test:issuer"),
 			PublicKey: untrustedKey, // This key is not in the trusted set
 		},
 	}
@@ -187,13 +187,13 @@ func TestURLBasedVerifier_Verify_HTTPError(t *testing.T) {
 
 			issuers := []Issuer{
 				{
-					Reference: IssuerReference("test:issuer"),
+					Reference: Reference("test:issuer"),
 					PublicKey: publicKey,
 				},
 			}
 
 			results := verifier.Verify(issuers)
-			status := results[IssuerReference("test:issuer")]
+			status := results[Reference("test:issuer")]
 
 			require.True(t, status.Supported)
 			require.Error(t, status.Error)
@@ -218,13 +218,13 @@ func TestURLBasedVerifier_Verify_InvalidReference(t *testing.T) {
 	// Test with empty identifier after scheme prefix
 	issuers := []Issuer{
 		{
-			Reference: IssuerReference("test:"), // Empty identifier
+			Reference: Reference("test:"), // Empty identifier
 			PublicKey: publicKey,
 		},
 	}
 
 	results := verifier.Verify(issuers)
-	status := results[IssuerReference("test:")]
+	status := results[Reference("test:")]
 
 	require.True(t, status.Supported)
 	require.Error(t, status.Error)
@@ -254,13 +254,13 @@ func TestURLBasedVerifier_Verify_MixedKeyTypes(t *testing.T) {
 
 	issuers := []Issuer{
 		{
-			Reference: IssuerReference("test:issuer"),
+			Reference: Reference("test:issuer"),
 			PublicKey: ed25519PubKey,
 		},
 	}
 
 	results := verifier.Verify(issuers)
-	status := results[IssuerReference("test:issuer")]
+	status := results[Reference("test:issuer")]
 
 	// Should still work - only ed25519 keys are considered
 	assert.True(t, status.Supported)

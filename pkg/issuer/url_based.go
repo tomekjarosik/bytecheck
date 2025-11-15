@@ -1,4 +1,4 @@
-package trust
+package issuer
 
 import (
 	"bufio"
@@ -35,15 +35,15 @@ func NewGitHubIssuerVerifier() *URLBasedVerifier {
 }
 
 // Supports returns true for references that match the verifier's configured scheme.
-func (v *URLBasedVerifier) Supports(reference IssuerReference) bool {
+func (v *URLBasedVerifier) Supports(reference Reference) bool {
 	return strings.HasPrefix(string(reference), v.scheme)
 }
 
 // Verify checks if the public keys of the given issuers are present in the trusted source.
 // It returns a map where each key is an issuer reference and the value is an IssuerStatus
-func (v *URLBasedVerifier) Verify(issuers []Issuer) map[IssuerReference]IssuerStatus {
-	results := make(map[IssuerReference]IssuerStatus)
-	issuersByRef := make(map[IssuerReference][]Issuer)
+func (v *URLBasedVerifier) Verify(issuers []Issuer) map[Reference]Status {
+	results := make(map[Reference]Status)
+	issuersByRef := make(map[Reference][]Issuer)
 	for _, issuer := range issuers {
 		if v.Supports(issuer.Reference) {
 			issuersByRef[issuer.Reference] = append(issuersByRef[issuer.Reference], issuer)
@@ -53,7 +53,7 @@ func (v *URLBasedVerifier) Verify(issuers []Issuer) map[IssuerReference]IssuerSt
 	for ref, issuerGroup := range issuersByRef {
 		trustedKeys, err := v.fetchPublicKeys(ref)
 		if err != nil {
-			results[ref] = IssuerStatus{
+			results[ref] = Status{
 				Issuer:    issuerGroup[0],
 				Supported: true,
 				Error:     fmt.Errorf("could not fetch keys for '%s': %w", ref, err),
@@ -71,7 +71,7 @@ func (v *URLBasedVerifier) Verify(issuers []Issuer) map[IssuerReference]IssuerSt
 		}
 
 		if !allKeysValid {
-			results[ref] = IssuerStatus{
+			results[ref] = Status{
 				Issuer:    issuerGroup[0],
 				Supported: true,
 				Error:     fmt.Errorf("one or more public keys for issuer '%s' not found in trusted source", ref),
@@ -79,7 +79,7 @@ func (v *URLBasedVerifier) Verify(issuers []Issuer) map[IssuerReference]IssuerSt
 			continue
 		}
 
-		results[ref] = IssuerStatus{
+		results[ref] = Status{
 			Issuer:    issuerGroup[0],
 			Supported: true,
 			Error:     nil,
@@ -88,7 +88,7 @@ func (v *URLBasedVerifier) Verify(issuers []Issuer) map[IssuerReference]IssuerSt
 
 	for _, issuer := range issuers {
 		if _, ok := results[issuer.Reference]; !ok {
-			results[issuer.Reference] = IssuerStatus{Issuer: issuer, Supported: false, Error: nil}
+			results[issuer.Reference] = Status{Issuer: issuer, Supported: false, Error: nil}
 		}
 	}
 
@@ -97,7 +97,7 @@ func (v *URLBasedVerifier) Verify(issuers []Issuer) map[IssuerReference]IssuerSt
 
 // fetchPublicKeys retrieves and parses public keys from the configured URL template.
 // Supports both HTTP URLs and file URLs.
-func (v *URLBasedVerifier) fetchPublicKeys(reference IssuerReference) (map[string]struct{}, error) {
+func (v *URLBasedVerifier) fetchPublicKeys(reference Reference) (map[string]struct{}, error) {
 	identifier := strings.TrimPrefix(string(reference), v.scheme)
 	if identifier == "" {
 		return nil, fmt.Errorf("invalid reference: missing identifier in '%s'", reference)
