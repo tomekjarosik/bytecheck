@@ -12,6 +12,31 @@ A powerful file integrity verification tool that generates cryptographically sig
 - **Progress monitoring** - Real-time feedback during operations
 - **Fast verification** - Quickly detect file changes, corruption, or missing files
 
+## Quick Start
+```bash
+# Unsigned generation of manifests
+bytecheck generate /your/data
+```
+![Unsigned](./docs/bytecheck-generate-unsigned.gif)
+
+```bash
+# Unsigned verification
+bytecheck verify /your/data
+```
+![Unsigned](./docs/bytecheck-verify-unsigned.gif)
+
+```bash
+# Yubikey signed generation of manifests with trusted auditor's keys
+./bytecheck generate /your/data --private-key /your/sk-ed25519-key --auditor-reference "github:<username>"
+```
+![Unsigned](./docs/bytecheck-generate-yubikey.gif)
+
+```bash
+# Fully audited verification using github keys
+bytecheck verify /your/data
+```
+![Unsigned](./docs/bytecheck-verify-audited.gif)
+
 ## Installation
 ```bash
 go install github.com/tomekjarosik/bytecheck@latest
@@ -22,19 +47,6 @@ git clone https://github.com/tomekjarosik/bytecheck.git
 cd bytecheck
 go build -o bytecheck
 sudo mv bytecheck /usr/local/bin/
-```
-
-## Quick Start
-
-```bash
-# Generate manifests
-bytecheck generate /your/data
-
-# Verify integrity
-bytecheck verify /your/data
-
-# Clean up manifests
-bytecheck clean /your/data
 ```
 
 ## Commands
@@ -50,9 +62,6 @@ Recursively generates `.bytecheck.manifest` files for each directory, containing
 
 **Examples:**
 ```bash
-# Generate manifests for current directory
-bytecheck generate
-
 # Generate manifests for specific directory
 bytecheck generate /path/to/data
 
@@ -75,9 +84,6 @@ Recursively verifies all manifest files against current directory state. Detects
 
 **Examples:**
 ```bash
-# Verify current directory
-bytecheck verify
-
 # Verify specific directory
 bytecheck verify /path/to/data
 
