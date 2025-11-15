@@ -37,13 +37,6 @@ bytecheck verify /your/data
 bytecheck clean /your/data
 ```
 
-## Configuration
-
-ByteCheck uses reasonable default. If you want maximum security,
-you can use custom HMAC key using this enviroment variable:
-
-- `BYTECHECK_HMAC_KEY` - Secret key for manifest signing
-
 ## Commands
 
 ### Generate Manifests

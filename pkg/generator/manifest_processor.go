@@ -8,28 +8,10 @@ import (
 	"path/filepath"
 )
 
-// Certificate defines the interface for any certificate structure.
-// This decouples verification logic from the concrete cert implementation.
-type Certificate interface {
-
-	// PublicKey returns the public key of the certificate's subject.
-	PublicKey() ed25519.PublicKey
-
-	// Signature returns the signature from the issuer.
-	Signature() []byte
-
-	// IssuerPublicKey returns the public key of the certificate's issuer.
-	IssuerPublicKey() ed25519.PublicKey
-
-	// IssuerReference return a string describing an issuer which can be validated externally (e.g. github keys)
-	IssuerReference() string
-
-	Verify() bool
-}
-
 type Signer interface {
 	Sign(data []byte) ([]byte, error)
-	PublicKey() ed25519.PublicKey
+	Algorithm() string
+	PublicKey() (ed25519.PublicKey, error)
 	Reference() string
 	Close() error
 }
@@ -40,7 +22,7 @@ type ManifestProcessor interface {
 
 // SignedProcessor handles manifests with cryptographic signatures
 type SignedProcessor struct {
-	certificate        Certificate
+	signerCertificate  manifest.Certificate
 	signer             Signer
 	manifestsGenerated *[]string
 }
@@ -57,15 +39,27 @@ func NewSignedProcessor(rootSigner Signer, manifestsGenerated *[]string) (*Signe
 		return nil, fmt.Errorf("failed to generate ephemeral signing key: %w", err)
 	}
 
-	cert, err := signing.IssueCertificate(pubKey, rootSigner)
+	dataToSign := append(pubKey[:], []byte(rootSigner.Reference())...)
+	signature, err := rootSigner.Sign(dataToSign)
 	if err != nil {
-		return nil, fmt.Errorf("failed to issue auditor certificate: %w", err)
+		return nil, fmt.Errorf("failed to sign intermediate signer public key using root signer: %w", err)
 	}
 
 	intermediateSigner := signing.NewEd25519Signer(privKey, "ephemeral")
 
+	issuerPublicKey, err := rootSigner.PublicKey()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get root signer public key: %w", err)
+	}
+
 	return &SignedProcessor{
-		certificate:        cert,
+		signerCertificate: &manifest.SimpleCertificate{
+			PubKey:       pubKey,
+			Sig:          signature,
+			IssuerPubKey: issuerPublicKey,
+			IssuerRef:    rootSigner.Reference(),
+			SigAlgo:      rootSigner.Algorithm(),
+		},
 		signer:             intermediateSigner,
 		manifestsGenerated: manifestsGenerated,
 	}, nil
@@ -85,7 +79,7 @@ func (p *SignedProcessor) Process(dirPath string, m *manifest.Manifest, manifest
 		return fmt.Errorf("failed to sign manifest: %w", err)
 	}
 
-	m.SetAuditedBy(p.certificate, manifestSignature)
+	m.SetAuditedBy(p.signerCertificate, manifestSignature)
 	return m.Save(filepath.Join(dirPath, manifestName))
 }
 

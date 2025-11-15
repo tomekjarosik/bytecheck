@@ -52,22 +52,20 @@ func (a *SimpleManifestAuditor) Verify(m *manifest.Manifest) AuditResult {
 		return AuditResult{IsAudited: true, Error: fmt.Errorf("auditor data present but certificate is missing")}
 	}
 
-	// Step 1: Verify the auditor's certificate.
-	// This ensures the certificate itself is valid and has not been tampered with.
-	cert := signing.NewSimpleCertificate(
-		auditorCert.PublicKey(),
-		auditorCert.IssuerPublicKey(),
-		auditorCert.IssuerReference(),
-		auditorCert.Signature())
+	dataToSign := append(auditorCert.PublicKey()[:], []byte(auditorCert.IssuerReference())...)
 
-	if !cert.Verify() {
+	valid, err := signing.VerifySignature(auditorCert.SignatureAlgorithm(), auditorCert.IssuerPublicKey(), dataToSign, auditorCert.Signature())
+	if err != nil {
+		return AuditResult{IsAudited: true, Error: fmt.Errorf("failed to verify auditor certificate signature: %w", err)}
+	}
+	if !valid {
 		return AuditResult{IsAudited: true, Error: fmt.Errorf("auditor certificate is invalid: signature from issuer does not match")}
 	}
 	// Since the certificate is valid, remember the issuer's reference for later validation
 	// against a trusted source (e.g., GitHub keys).
-	a.trustedIssuers[cert.IssuerReference()] = issuer.Issuer{
-		Reference: issuer.Reference(cert.IssuerReference()),
-		PublicKey: cert.IssuerPublicKey()}
+	a.trustedIssuers[auditorCert.IssuerReference()] = issuer.Issuer{
+		Reference: issuer.Reference(auditorCert.IssuerReference()),
+		PublicKey: auditorCert.IssuerPublicKey()}
 
 	// Step 2: Verify the manifest's signature.
 	// This signature must be valid when checked against the certificate's public key.
@@ -81,7 +79,14 @@ func (a *SimpleManifestAuditor) Verify(m *manifest.Manifest) AuditResult {
 			Error:     fmt.Errorf("failed to prepare manifest data for signature verification: %w", err),
 		}
 	}
-	if !signing.VerifySignature(cert.PublicKey(), dataToVerify, manifestSignature) {
+	valid, err = signing.VerifySignature(signing.SignatureAlgorithmEd25519, auditorCert.PublicKey(), dataToVerify, manifestSignature)
+	if err != nil {
+		return AuditResult{
+			IsAudited: true,
+			Error:     fmt.Errorf("failed to verify manifest signature: %w", err),
+		}
+	}
+	if !valid {
 		return AuditResult{
 			IsAudited: true,
 			Error:     fmt.Errorf("manifest signature is invalid"),

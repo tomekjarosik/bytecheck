@@ -10,7 +10,8 @@ var ErrNotImplemented = errors.New("not implemented")
 
 type Signer interface {
 	Sign(data []byte) ([]byte, error)
-	PublicKey() ed25519.PublicKey
+	Algorithm() string
+	PublicKey() (ed25519.PublicKey, error)
 	Reference() string
 	Close() error
 }
@@ -22,6 +23,10 @@ var _ Signer = (*Ed25519Signer)(nil)
 type Ed25519Signer struct {
 	privKey   ed25519.PrivateKey
 	reference string
+}
+
+func (s *Ed25519Signer) Algorithm() string {
+	return SignatureAlgorithmEd25519
 }
 
 // NewEd25519Signer creates a new Signer from a private key.
@@ -54,8 +59,8 @@ func (s *Ed25519Signer) Sign(data []byte) ([]byte, error) {
 	return signature, nil
 }
 
-func (s *Ed25519Signer) PublicKey() ed25519.PublicKey {
-	return s.privKey.Public().(ed25519.PublicKey)
+func (s *Ed25519Signer) PublicKey() (ed25519.PublicKey, error) {
+	return s.privKey.Public().(ed25519.PublicKey), nil
 }
 func (s *Ed25519Signer) Reference() string {
 	return s.reference
@@ -75,8 +80,8 @@ func (s *FakeSigner) Sign(data []byte) ([]byte, error) {
 	return nil, ErrNotImplemented
 }
 
-func (s *FakeSigner) PublicKey() ed25519.PublicKey {
-	return []byte("fake-public-key")
+func (s *FakeSigner) PublicKey() (ed25519.PublicKey, error) {
+	return []byte("fake-public-key"), nil
 }
 
 func (s *FakeSigner) Close() error {
@@ -84,3 +89,5 @@ func (s *FakeSigner) Close() error {
 }
 
 func (s *FakeSigner) Reference() string { return "fake" }
+
+func (s *FakeSigner) Algorithm() string { return SignatureAlgorithmEd25519 }

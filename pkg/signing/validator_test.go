@@ -2,6 +2,7 @@ package signing
 
 import (
 	"crypto/ed25519"
+	"github.com/stretchr/testify/require"
 	"testing"
 )
 
@@ -16,27 +17,27 @@ func TestVerifySignature(t *testing.T) {
 	signature := ed25519.Sign(privKey, testData)
 
 	// Test valid signature
-	if !VerifySignature(pubKey, testData, signature) {
-		t.Error("Valid signature verification failed")
-	}
+	valid, err := VerifySignature(SignatureAlgorithmEd25519, pubKey, testData, signature)
+	require.NoError(t, err)
+	require.True(t, valid)
 
 	// Test invalid signature (wrong data)
 	wrongData := []byte("wrong message")
-	if VerifySignature(pubKey, wrongData, signature) {
-		t.Error("Invalid signature verification should fail")
-	}
+	valid, err = VerifySignature(SignatureAlgorithmEd25519, pubKey, wrongData, signature)
+	require.NoError(t, err)
+	require.False(t, valid)
 
 	// Test invalid signature (corrupted signature)
 	corruptedSignature := make([]byte, len(signature))
 	copy(corruptedSignature, signature)
 	corruptedSignature[0] ^= 0xFF // Flip bits
-	if VerifySignature(pubKey, testData, corruptedSignature) {
-		t.Error("Corrupted signature verification should fail")
-	}
+	valid, err = VerifySignature(SignatureAlgorithmEd25519, pubKey, testData, corruptedSignature)
+	require.NoError(t, err)
+	require.False(t, valid)
 
 	// Test with wrong public key
 	wrongPubKey, _, _ := ed25519.GenerateKey(nil)
-	if VerifySignature(wrongPubKey, testData, signature) {
-		t.Error("Wrong public key verification should fail")
-	}
+	valid, err = VerifySignature(SignatureAlgorithmEd25519, wrongPubKey, testData, signature)
+	require.NoError(t, err)
+	require.False(t, valid)
 }

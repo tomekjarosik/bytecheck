@@ -16,14 +16,18 @@ func newTestSigner(t *testing.T, reference string) Signer {
 	require.NoError(t, err, "Failed to create key pair")
 	signer := NewEd25519Signer(privateKey, reference)
 	require.NotNil(t, signer)
-	require.True(t, pubKey.Equal(signer.PublicKey()))
+	pubKey2, err := signer.PublicKey()
+	require.NoError(t, err)
+	require.True(t, pubKey.Equal(pubKey2))
 	return signer
 }
 
 func TestNewEd25519Signer(t *testing.T) {
 	signer := newTestSigner(t, "test-reference")
-	assert.NotNil(t, signer.PublicKey())
-	assert.Len(t, signer.PublicKey(), ed25519.PublicKeySize)
+	pubKey, err := signer.PublicKey()
+	require.NoError(t, err)
+	assert.NotNil(t, pubKey)
+	assert.Len(t, pubKey, ed25519.PublicKeySize)
 	assert.Equal(t, "test-reference", signer.Reference())
 }
 
@@ -35,7 +39,9 @@ func TestEd25519Signer_Sign(t *testing.T) {
 	require.NoError(t, err, "Failed to sign data")
 
 	assert.Len(t, signature, ed25519.SignatureSize)
-	assert.True(t, ed25519.Verify(signer.PublicKey(), testData, signature), "Signature verification failed")
+	pubKey, err := signer.PublicKey()
+	require.NoError(t, err)
+	assert.True(t, ed25519.Verify(pubKey, testData, signature), "Signature verification failed")
 }
 
 func TestEd25519Signer_Close(t *testing.T) {
@@ -54,14 +60,15 @@ func TestNewEd25519SignerFromFile(t *testing.T) {
 	require.NoError(t, err, "Failed to create signer from file")
 
 	expectedPublicKey := privateKey.Public().(ed25519.PublicKey)
-	assert.True(t, signer.PublicKey().Equal(expectedPublicKey), "Public key doesn't match expected key")
+	signerPubKey, err := signer.PublicKey()
+	require.NoError(t, err)
+	assert.True(t, signerPubKey.Equal(expectedPublicKey), "Public key doesn't match expected key")
 	assert.Equal(t, reference, signer.Reference())
 
 	testData := []byte("test message")
 	signature, err := signer.Sign(testData)
 	require.NoError(t, err, "Failed to sign data")
-
-	assert.True(t, ed25519.Verify(signer.PublicKey(), testData, signature), "Signature verification failed")
+	assert.True(t, ed25519.Verify(signerPubKey, testData, signature), "Signature verification failed")
 }
 
 func TestNewEd25519SignerFromFile_Failures(t *testing.T) {
@@ -106,6 +113,7 @@ func TestEd25519Signer_SignEmptyData(t *testing.T) {
 
 	signature, err := signer.Sign(emptyData)
 	require.NoError(t, err, "Failed to sign empty data")
-
-	assert.True(t, ed25519.Verify(signer.PublicKey(), emptyData, signature), "Failed to verify signature of empty data")
+	signerPubKey, err := signer.PublicKey()
+	require.NoError(t, err)
+	assert.True(t, ed25519.Verify(signerPubKey, emptyData, signature), "Failed to verify signature of empty data")
 }

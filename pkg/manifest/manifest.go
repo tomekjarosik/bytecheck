@@ -24,6 +24,7 @@ type Certificate interface {
 	Signature() []byte
 	IssuerPublicKey() ed25519.PublicKey
 	IssuerReference() string
+	SignatureAlgorithm() string
 }
 
 // SimpleCertificate implements Certificate interface
@@ -32,19 +33,22 @@ type SimpleCertificate struct {
 	Sig          []byte            `json:"-"`
 	IssuerPubKey ed25519.PublicKey `json:"-"`
 	IssuerRef    string            `json:"-"`
+	SigAlgo      string            `json:"-"`
 }
 
 func (c *SimpleCertificate) PublicKey() ed25519.PublicKey       { return c.PubKey }
 func (c *SimpleCertificate) Signature() []byte                  { return c.Sig }
 func (c *SimpleCertificate) IssuerPublicKey() ed25519.PublicKey { return c.IssuerPubKey }
 func (c *SimpleCertificate) IssuerReference() string            { return c.IssuerRef }
+func (c *SimpleCertificate) SignatureAlgorithm() string         { return c.SigAlgo }
 
 // CertificateData is the JSON-serializable representation
 type CertificateData struct {
-	PublicKey       string `json:"publicKey"`
-	Signature       string `json:"signature"`
-	IssuerPublicKey string `json:"issuerPublicKey"`
-	IssuerRef       string `json:"issuerReference"`
+	PublicKey          string `json:"publicKey"`
+	Signature          string `json:"signature"`
+	IssuerPublicKey    string `json:"issuerPublicKey"`
+	IssuerRef          string `json:"issuerReference"`
+	SignatureAlgorithm string `json:"signatureAlgorithm"`
 }
 
 // AuditorData is the JSON-serializable representation
@@ -79,10 +83,11 @@ func (m *Manifest) SetAuditedBy(cert Certificate, manifestSignature []byte) {
 	m.Auditor = &AuditorData{
 		Timestamp: time.Now(),
 		Certificate: CertificateData{
-			PublicKey:       hex.EncodeToString(cert.PublicKey()),
-			Signature:       hex.EncodeToString(cert.Signature()),
-			IssuerPublicKey: hex.EncodeToString(cert.IssuerPublicKey()),
-			IssuerRef:       cert.IssuerReference(),
+			PublicKey:          hex.EncodeToString(cert.PublicKey()),
+			Signature:          hex.EncodeToString(cert.Signature()),
+			IssuerPublicKey:    hex.EncodeToString(cert.IssuerPublicKey()),
+			IssuerRef:          cert.IssuerReference(),
+			SignatureAlgorithm: cert.SignatureAlgorithm(),
 		},
 		ManifestSignature: hex.EncodeToString(manifestSignature),
 	}
@@ -103,6 +108,7 @@ func (m *Manifest) GetAuditorCertificate() Certificate {
 		Sig:          sig,
 		IssuerPubKey: issuerPubKey,
 		IssuerRef:    m.Auditor.Certificate.IssuerRef,
+		SigAlgo:      m.Auditor.Certificate.SignatureAlgorithm,
 	}
 }
 

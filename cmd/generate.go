@@ -16,6 +16,10 @@ func loadCryptoSigner(keyPath *string, issuerReference *string) (signer signing.
 		if issuerReference == nil || len(*issuerReference) == 0 {
 			return nil, fmt.Errorf("issuer reference is required when using private key")
 		}
+		signer, err = signing.NewYubiKeySigner(*keyPath, *issuerReference)
+		if err == nil {
+			return signer, nil
+		}
 		signer, err = signing.NewEd25519SignerFromFile(*keyPath, *issuerReference)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create signer from file: %w", err)

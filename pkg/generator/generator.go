@@ -2,7 +2,6 @@ package generator
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"github.com/tomekjarosik/bytecheck/pkg/manifest"
 	"github.com/tomekjarosik/bytecheck/pkg/scanner"
@@ -51,14 +50,10 @@ func (g *Generator) Generate(ctx context.Context, rootPath string) error {
 // createProcessor determines which processor to use based on signer capabilities
 func (g *Generator) createProcessor() (ManifestProcessor, error) {
 	// Test if signer supports signing
-	_, err := g.signer.Sign([]byte("test"))
-	if errors.Is(err, signing.ErrNotImplemented) {
+	// TODO: pass proper signing method from outside. Do not guess it.
+	if g.signer.Reference() == "fake" {
 		return NewUnsignedProcessor(&g.manifestsGenerated), nil
 	}
-	if err != nil {
-		return nil, fmt.Errorf("signer test failed: %w", err)
-	}
-
 	return NewSignedProcessor(g.signer, &g.manifestsGenerated)
 }
 

@@ -50,6 +50,7 @@ func NewYubiKeySigner(privateKeyPath string, issuerReference string) (*YubiKeySi
 func (y *YubiKeySigner) Sign(data []byte) ([]byte, error) {
 
 	// Use ssh-keygen to sign, just like Git does
+	fmt.Printf("Signing with YubiKey - you will need to touch it\n")
 	cmd := exec.Command("ssh-keygen", "-Y", "sign",
 		"-f", y.privateKeyPath,
 		"-n", "file",
@@ -65,7 +66,6 @@ func (y *YubiKeySigner) Sign(data []byte) ([]byte, error) {
 		}
 		return nil, fmt.Errorf("ssh-keygen signing failed: %w", err)
 	}
-	fmt.Println(string(signatureOutput))
 	block, _ := pem.Decode(signatureOutput)
 	if block == nil {
 		return nil, fmt.Errorf("failed to decode PEM block from ssh-keygen output")
