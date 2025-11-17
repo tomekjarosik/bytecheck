@@ -14,29 +14,22 @@ import (
 
 // URLBasedVerifier validates issuers against public keys hosted at a given URL template.
 type URLBasedVerifier struct {
-	client      *http.Client
-	scheme      string
-	urlTemplate string
+	client       *http.Client
+	schemeConfig SchemeConfig
 }
 
-// NewURLBasedVerifier creates a generic verifier that fetches keys from a URL.
+// NewURLBasedTrustVerifier creates a generic verifier that fetches keys from a URL.
 // The urlTemplate should be a format string that accepts one argument (e.g., "https://example.com/keys/%s").
-func NewURLBasedVerifier(scheme string, urlTemplate string) *URLBasedVerifier {
+func NewURLBasedTrustVerifier(schemeConfig SchemeConfig) *URLBasedVerifier {
 	return &URLBasedVerifier{
-		client:      &http.Client{},
-		scheme:      scheme,
-		urlTemplate: urlTemplate,
+		client:       &http.Client{},
+		schemeConfig: schemeConfig,
 	}
-}
-
-// NewGitHubIssuerVerifier creates a new verifier specifically for GitHub-hosted keys.
-func NewGitHubIssuerVerifier() *URLBasedVerifier {
-	return NewURLBasedVerifier("github:", "https://github.com/%s.keys")
 }
 
 // Supports returns true for references that match the verifier's configured scheme.
 func (v *URLBasedVerifier) Supports(reference Reference) bool {
-	return strings.HasPrefix(string(reference), v.scheme)
+	return strings.HasPrefix(string(reference), v.schemeConfig.Name)
 }
 
 // Verify checks if the public keys of the given issuers are present in the trusted source.
@@ -98,12 +91,19 @@ func (v *URLBasedVerifier) Verify(issuers []Issuer) map[Reference]Status {
 // fetchPublicKeys retrieves and parses public keys from the configured URL template.
 // Supports both HTTP URLs and file URLs.
 func (v *URLBasedVerifier) fetchPublicKeys(reference Reference) (map[string]struct{}, error) {
-	identifier := strings.TrimPrefix(string(reference), v.scheme)
-	if identifier == "" {
-		return nil, fmt.Errorf("invalid reference: missing identifier in '%s'", reference)
-	}
+	identifier := strings.TrimPrefix(string(reference), v.schemeConfig.Name+":")
 
-	url := fmt.Sprintf(v.urlTemplate, identifier)
+	var url string
+	if strings.Contains(v.schemeConfig.Template, "%s") {
+		// Template has placeholder - use identifier
+		if identifier == "" {
+			return nil, fmt.Errorf("invalid reference: missing identifier in '%s'", reference)
+		}
+		url = fmt.Sprintf(v.schemeConfig.Template, identifier)
+	} else {
+		// Static template - ignore identifier
+		url = v.schemeConfig.Template
+	}
 
 	var reader io.Reader
 	var closeFunc func() error
@@ -113,7 +113,7 @@ func (v *URLBasedVerifier) fetchPublicKeys(reference Reference) (map[string]stru
 		filePath := strings.TrimPrefix(url, "file://")
 		file, err := os.Open(filePath)
 		if err != nil {
-			return nil, fmt.Errorf("failed to open file %s: %w", filePath, err)
+			return nil, err
 		}
 		reader = file
 		closeFunc = file.Close

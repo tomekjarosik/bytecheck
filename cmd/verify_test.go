@@ -389,6 +389,7 @@ func TestVerifyCmd_SignedWithAuditor_mustShowCorrectAuditorStatus(t *testing.T) 
 		reference      string
 		keyPair        string
 		expectedStatus string // "trusted", "unsupported", etc.
+		auditorSchemes []string
 		wrongKey       bool
 	}{
 		{
@@ -396,6 +397,9 @@ func TestVerifyCmd_SignedWithAuditor_mustShowCorrectAuditorStatus(t *testing.T) 
 			reference:      "custom:testuser",
 			keyPair:        "testuser",
 			expectedStatus: "audited by \u001B[36mcustom:testuser\u001B[0m \u001B[32m[trusted]\u001B[0m",
+			auditorSchemes: []string{
+				"custom:file://" + tempDir + "/%s.pub",
+			},
 		},
 		{
 			name:           "unsupported scheme",
@@ -408,6 +412,9 @@ func TestVerifyCmd_SignedWithAuditor_mustShowCorrectAuditorStatus(t *testing.T) 
 			reference:      "custom:wrong-auditor",
 			keyPair:        "testuser",
 			expectedStatus: "audited by \u001B[36mcustom:wrong-auditor\u001B[0m \u001B[31m[error: could not fetch keys ",
+			auditorSchemes: []string{
+				"custom:file://" + tempDir + "/%s.pub",
+			},
 		},
 		{
 			name:           "trusted user",
@@ -415,6 +422,9 @@ func TestVerifyCmd_SignedWithAuditor_mustShowCorrectAuditorStatus(t *testing.T) 
 			keyPair:        "testuser",
 			wrongKey:       true,
 			expectedStatus: "audited by \u001B[36mcustom:testuser\u001B[0m \u001B[33m[fishy: one or more public keys for issuer 'custom:testuser' not found in trusted source]",
+			auditorSchemes: []string{
+				"custom:file://" + tempDir + "/%s.pub",
+			},
 		},
 	}
 
@@ -446,14 +456,95 @@ func TestVerifyCmd_SignedWithAuditor_mustShowCorrectAuditorStatus(t *testing.T) 
 				require.NoError(t, err)
 			}
 
-			os.Setenv("BYTECHECK_CUSTOM_AUDITOR_VERIFIER_URL_TEMPLATE", "file://"+tempDir+"/%s.pub")
-			defer os.Unsetenv("BYTECHECK_CUSTOM_AUDITOR_VERIFIER_URL_TEMPLATE")
+			args := []string{subDir}
+			for _, scheme := range tc.auditorSchemes {
+				args = append(args, "--auditor-scheme", scheme)
+			}
 			cmd := NewVerifyCommand()
-			output, err := ExecuteCommandWithCapture(t, cmd, []string{subDir})
+			output, err := ExecuteCommandWithCapture(t, cmd, args)
 			require.NoError(t, err)
 			assert.Contains(t, output, tc.reference)
 			assert.Contains(t, output, tc.expectedStatus)
 		})
 
+	}
+}
+
+func TestVerifyCmd_AuditorSchemeFlag_Validation(t *testing.T) {
+	tempDir := t.TempDir()
+
+	testCases := []struct {
+		name           string
+		auditorSchemes []string
+		expectError    bool
+		errorContains  string
+	}{
+		{
+			name:           "valid single scheme",
+			auditorSchemes: []string{"github:https://github.com/%s.keys"},
+			expectError:    false,
+		},
+		{
+			name: "valid multiple schemes",
+			auditorSchemes: []string{
+				"github:https://github.com/%s.keys",
+				"corp:https://corp.com/keys/%s.pub",
+			},
+			expectError: false,
+		},
+		{
+			name:           "invalid format missing colon",
+			auditorSchemes: []string{"githubhttps-//github.com/%s.keys"},
+			expectError:    true,
+			errorContains:  "invalid scheme format",
+		},
+		{
+			name:           "invalid URL template",
+			auditorSchemes: []string{"github:not-a-valid-url"},
+			expectError:    true,
+			errorContains:  "invalid URL template",
+		},
+		{
+			name:           "too many placeholders",
+			auditorSchemes: []string{"test:https://example.com/%s/keys/%s"},
+			expectError:    true,
+			errorContains:  "at most one",
+		},
+		{
+			name: "duplicate scheme names",
+			auditorSchemes: []string{
+				"github:https://github.com/%s.keys",
+				"github:https://gitlab.com/%s.keys",
+			},
+			expectError:   true,
+			errorContains: "auditor scheme 'github' already defined",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			subDir := filepath.Join(tempDir, tc.name)
+			err := os.MkdirAll(subDir, 0755)
+			require.NoError(t, err)
+
+			CreateFreshManifest(t, subDir)
+
+			cmd := NewVerifyCommand()
+			args := []string{subDir}
+			for _, scheme := range tc.auditorSchemes {
+				args = append(args, "--auditor-scheme", scheme)
+			}
+
+			output, err := ExecuteCommandWithCapture(t, cmd, args)
+
+			if tc.expectError {
+				require.Error(t, err)
+				if tc.errorContains != "" {
+					assert.Contains(t, output, tc.errorContains)
+				}
+			} else {
+				require.NoError(t, err)
+			}
+		})
 	}
 }

@@ -13,7 +13,10 @@ import (
 
 // TestURLBasedVerifier_Supports tests the Supports method
 func TestURLBasedVerifier_Supports(t *testing.T) {
-	verifier := NewURLBasedVerifier("github:", "https://github.com/%s.keys")
+	verifier := NewURLBasedTrustVerifier(SchemeConfig{
+		Name:     "github",
+		Template: "https://github.com/%s.keys",
+	})
 
 	tests := []struct {
 		name      string
@@ -69,7 +72,10 @@ func TestURLBasedVerifier_Verify_Success(t *testing.T) {
 	defer server.Close()
 
 	// Create verifier with test server URL
-	verifier := NewURLBasedVerifier("test:", server.URL+"/%s")
+	verifier := NewURLBasedTrustVerifier(SchemeConfig{
+		Name:     "test",
+		Template: server.URL + "/%s",
+	})
 	verifier.client = server.Client()
 
 	issuers := []Issuer{
@@ -94,7 +100,7 @@ func TestURLBasedVerifier_Verify_Success(t *testing.T) {
 	require.Contains(t, results, Reference("unknown:scheme"))
 
 	// Check successful verification
-	status := results[Reference("test:valid-issuer")]
+	status := results["test:valid-issuer"]
 	assert.True(t, status.Supported)
 	assert.NoError(t, status.Error)
 	assert.Equal(t, issuers[0].Reference, status.Issuer.Reference)
@@ -121,7 +127,10 @@ func TestURLBasedVerifier_Verify_KeyNotFound(t *testing.T) {
 	}))
 	defer server.Close()
 
-	verifier := NewURLBasedVerifier("test:", server.URL+"/%s")
+	verifier := NewURLBasedTrustVerifier(SchemeConfig{
+		Name:     "test",
+		Template: server.URL + "/%s",
+	})
 	verifier.client = server.Client()
 
 	issuers := []Issuer{
@@ -182,7 +191,10 @@ func TestURLBasedVerifier_Verify_HTTPError(t *testing.T) {
 			server := httptest.NewServer(tt.handler)
 			defer server.Close()
 
-			verifier := NewURLBasedVerifier("test:", server.URL+"/%s")
+			verifier := NewURLBasedTrustVerifier(SchemeConfig{
+				Name:     "test",
+				Template: server.URL + "/%s",
+			})
 			verifier.client = server.Client()
 
 			issuers := []Issuer{
@@ -212,7 +224,10 @@ func TestURLBasedVerifier_Verify_InvalidReference(t *testing.T) {
 	}))
 	defer server.Close()
 
-	verifier := NewURLBasedVerifier("test:", server.URL+"/%s")
+	verifier := NewURLBasedTrustVerifier(SchemeConfig{
+		Name:     "test",
+		Template: server.URL + "/%s",
+	})
 	verifier.client = server.Client()
 
 	// Test with empty identifier after scheme prefix
@@ -249,7 +264,10 @@ func TestURLBasedVerifier_Verify_MixedKeyTypes(t *testing.T) {
 	}))
 	defer server.Close()
 
-	verifier := NewURLBasedVerifier("test:", server.URL+"/%s")
+	verifier := NewURLBasedTrustVerifier(SchemeConfig{
+		Name:     "test",
+		Template: server.URL + "/%s",
+	})
 	verifier.client = server.Client()
 
 	issuers := []Issuer{
@@ -285,7 +303,140 @@ func TestIsKeyInSet(t *testing.T) {
 func TestNewGitHubIssuerVerifier(t *testing.T) {
 	verifier := NewGitHubIssuerVerifier()
 
-	assert.Equal(t, "github:", verifier.scheme)
-	assert.Equal(t, "https://github.com/%s.keys", verifier.urlTemplate)
+	assert.Equal(t, "github", verifier.schemeConfig.Name)
+	assert.Equal(t, "https://github.com/%s.keys", verifier.schemeConfig.Template)
 	assert.NotNil(t, verifier.client)
+}
+
+// TestURLBasedVerifier_Verify_StaticURL tests verification with a static URL template (no %s)
+func TestURLBasedVerifier_Verify_StaticURL(t *testing.T) {
+	// Generate test key
+	publicKey, _, err := ed25519.GenerateKey(nil)
+	require.NoError(t, err, "Failed to generate key pair")
+
+	// Create a test server that returns the public key
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Verify that we're hitting the expected static endpoint
+		assert.Equal(t, "/static/keys.txt", r.URL.Path)
+
+		// Return the public key in SSH format
+		sshPub, err := ssh.NewPublicKey(publicKey)
+		require.NoError(t, err)
+		w.Write(ssh.MarshalAuthorizedKey(sshPub))
+	}))
+	defer server.Close()
+
+	// Create verifier with static URL template (no %s)
+	verifier := NewURLBasedTrustVerifier(SchemeConfig{
+		Name:     "static",
+		Template: server.URL + "/static/keys.txt", // No %s placeholder
+	})
+	verifier.client = server.Client()
+
+	issuers := []Issuer{
+		{
+			Reference: Reference("static:any-identifier"), // Identifier is ignored for static URLs
+			PublicKey: publicKey,
+		},
+	}
+
+	results := verifier.Verify(issuers)
+
+	// Verify results
+	require.Contains(t, results, Reference("static:any-identifier"))
+	status := results["static:any-identifier"]
+	assert.True(t, status.Supported)
+	assert.NoError(t, status.Error)
+	assert.Equal(t, issuers[0].Reference, status.Issuer.Reference)
+}
+
+// TestURLBasedVerifier_Verify_MultipleIssuersSameStaticURL tests multiple issuers using the same static URL
+func TestURLBasedVerifier_Verify_MultipleIssuersSameStaticURL(t *testing.T) {
+	// Generate test keys
+	publicKey1, _, err := ed25519.GenerateKey(nil)
+	require.NoError(t, err)
+	publicKey2, _, err := ed25519.GenerateKey(nil)
+	require.NoError(t, err)
+
+	// Create a test server that returns multiple public keys
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Return both public keys in SSH format
+		sshPub1, err := ssh.NewPublicKey(publicKey1)
+		require.NoError(t, err)
+		sshPub2, err := ssh.NewPublicKey(publicKey2)
+		require.NoError(t, err)
+
+		response := string(ssh.MarshalAuthorizedKey(sshPub1)) + "\n" +
+			string(ssh.MarshalAuthorizedKey(sshPub2)) + "\n"
+		w.Write([]byte(response))
+	}))
+	defer server.Close()
+
+	// Create verifier with static URL template
+	verifier := NewURLBasedTrustVerifier(SchemeConfig{
+		Name:     "team",
+		Template: server.URL + "/team-keys.txt", // No %s placeholder
+	})
+	verifier.client = server.Client()
+
+	issuers := []Issuer{
+		{
+			Reference: Reference("team:alice"), // Identifier ignored
+			PublicKey: publicKey1,
+		},
+		{
+			Reference: Reference("team:bob"), // Identifier ignored
+			PublicKey: publicKey2,
+		},
+		{
+			Reference: Reference("team:charlie"), // Identifier ignored
+			PublicKey: publicKey1,                // Same key as alice
+		},
+	}
+
+	results := verifier.Verify(issuers)
+
+	// All should be trusted since both keys are in the static key file
+	for _, issuer := range issuers {
+		status := results[issuer.Reference]
+		assert.True(t, status.Supported)
+		assert.NoError(t, status.Error)
+	}
+}
+
+// TestURLBasedVerifier_Verify_StaticURLWithMissingKey tests static URL where key is not found
+func TestURLBasedVerifier_Verify_StaticURLWithMissingKey(t *testing.T) {
+	// Generate keys
+	trustedKey, _, err := ed25519.GenerateKey(nil)
+	require.NoError(t, err)
+	untrustedKey, _, err := ed25519.GenerateKey(nil)
+	require.NoError(t, err)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Return only the trusted key
+		sshPub, err := ssh.NewPublicKey(trustedKey)
+		require.NoError(t, err)
+		w.Write(ssh.MarshalAuthorizedKey(sshPub))
+	}))
+	defer server.Close()
+
+	verifier := NewURLBasedTrustVerifier(SchemeConfig{
+		Name:     "static",
+		Template: server.URL + "/keys.pub", // No %s
+	})
+	verifier.client = server.Client()
+
+	issuers := []Issuer{
+		{
+			Reference: Reference("static:user123"), // Identifier ignored
+			PublicKey: untrustedKey,                // This key is not in the static key file
+		},
+	}
+
+	results := verifier.Verify(issuers)
+
+	status := results["static:user123"]
+	require.True(t, status.Supported)
+	require.Error(t, status.Error)
+	assert.Contains(t, status.Error.Error(), "not found in trusted source")
 }

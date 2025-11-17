@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// MockVerifier implements Verifier for testing
+// MockVerifier implements TrustVerifier for testing
 type MockVerifier struct {
 	supportedSchemes map[Reference]bool
 	verifyResults    map[Reference]Status
@@ -205,7 +205,7 @@ func TestMultiSourceVerifier_Verify_NilIssuers(t *testing.T) {
 func TestMultiSourceVerifier_Supports(t *testing.T) {
 	multiVerifier := NewMultiSourceVerifier()
 
-	// MultiSourceVerifier should always return true for Supports
+	// MultiSourceTrustVerifier should always return true for Supports
 	if !multiVerifier.Supports("any://scheme") {
 		t.Error("Expected Supports to always return true")
 	}

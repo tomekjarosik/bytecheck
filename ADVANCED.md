@@ -46,11 +46,12 @@ bytecheck verify /your/data
 ```bash
 # Use local public key files
 
-bytecheck generate /your/data --private-key ~/.ssh/id_ed25519 --auditor-reference custom:yourusername
+bytecheck generate /your/data --private-key ~/.ssh/id_ed25519 --auditor-reference corp:yourusername
 ```
 
 And verify:
 ```
-export BYTECHECK_CUSTOM_AUDITOR_VERIFIER_URL_TEMPLATE="file:///some/directory/%s.pub"
-bytecheck verify /your/data
+bytecheck verify /your/data \
+    --auditor-scheme=corp:file:///home/tomek/trusted-%s.pub \
+    --auditor-scheme=github:file:///home/tomek/allowed_signers.txt
 ```

@@ -35,11 +35,11 @@ type Result struct {
 type Verifier struct {
 	scanner       *scanner.Scanner
 	auditor       ManifestAuditor
-	trustVerifier issuer.Verifier
+	trustVerifier issuer.TrustVerifier
 }
 
 // New creates a new Verifier instance
-func New(sc *scanner.Scanner, auditor ManifestAuditor, verifier issuer.Verifier) *Verifier {
+func New(sc *scanner.Scanner, auditor ManifestAuditor, verifier issuer.TrustVerifier) *Verifier {
 	return &Verifier{
 		scanner:       sc,
 		auditor:       auditor,
