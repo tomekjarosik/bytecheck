@@ -55,7 +55,7 @@ func (y *YubiKeySigner) Sign(data []byte) ([]byte, error) {
 		"-f", y.privateKeyPath,
 		"-n", "file",
 		"-q")
-
+	cmd.Env = removeEnvVar(os.Environ(), "SSH_AUTH_SOCK")
 	cmd.Stdin = bytes.NewReader(data)
 
 	signatureOutput, err := cmd.Output()
@@ -122,4 +122,16 @@ func (y *YubiKeySigner) Algorithm() string {
 func (y *YubiKeySigner) Close() error {
 	// Nothing to close for file-based approach
 	return nil
+}
+
+// removeEnvVar removes a specific environment variable from the list
+func removeEnvVar(env []string, key string) []string {
+	var result []string
+	prefix := key + "="
+	for _, e := range env {
+		if !strings.HasPrefix(e, prefix) {
+			result = append(result, e)
+		}
+	}
+	return result
 }
