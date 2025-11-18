@@ -10,6 +10,7 @@ import (
 	"github.com/tomekjarosik/bytecheck/pkg/signing"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -383,6 +384,9 @@ func TestVerifyCmd_WhenSigned_WithMultipleUnsupportedAuditors_mustShowAuditorsAs
 
 func TestVerifyCmd_SignedWithAuditor_mustShowCorrectAuditorStatus(t *testing.T) {
 	tempDir := t.TempDir()
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping this test on Windows")
+	}
 
 	testCases := []struct {
 		name           string
